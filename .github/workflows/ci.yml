@@ -1,0 +1,12 @@
+name: ci
+on: [push, pull_request]
+jobs:
+  check:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+      - run: node --check lib/mac.mjs && node --check lib/jev.mjs && node lib/jev.mjs
+      - run: swiftc -O lib/ax.swift -o /tmp/mac-ax && /tmp/mac-ax trusted
+      - run: node setup-check.mjs
