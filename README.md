@@ -4,14 +4,14 @@ Drive macOS apps from an AI agent or a script, through the accessibility API —
 no screenshots, no cursor, no stolen focus.
 
 ```console
-$ mac-pilot dump --app "System Settings" | head -4
+$ mac dump --app "System Settings" | head -4
 System Settings — "General"
 @1 [Button] "Alex Lee, Apple Account"
 @2 [Button] "Software Update Available"
 @3 [Button] "Add AppleCare Coverage,  "
-$ mac-pilot click --app "System Settings" General
+$ mac click --app "System Settings" General
 clicked Button "General"
-$ mac-pilot flow "Open the About page in System Settings" --app "System Settings"
+$ mac flow "Open the About page in System Settings" --app "System Settings"
  1 jev  406ms CLICK       p=0.95  @36 Button "About" p=0.70
  2 jev  375ms DONE        p=0.86
 done: 1 action(s) in 1.3s — {"app":"System Settings","window":"About"} (verify independently)
@@ -39,12 +39,12 @@ A routine Settings flow takes 2–4 s.
 
 ```bash
 git clone https://github.com/akleizor/mac-pilot && cd mac-pilot
-./bin/mac-pilot setup
+./bin/mac setup
 ```
 
 `setup` builds the driver and asks macOS for the Accessibility permission, the one
 grant any tool that presses other apps' controls needs. It opens that settings page
-for the app you run `mac-pilot` from (your terminal or agent app) and continues once
+for the app you run `mac` from (your terminal or agent app) and continues once
 you switch it on.
 
 ## Use with an agent

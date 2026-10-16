@@ -1,11 +1,11 @@
 ---
 name: mac-pilot
-description: "Operate macOS apps the way a person would, without screenshots and without taking the user's pointer or focus: click buttons, choose menus, fill fields, press keys, answer password and permission dialogs. `mac-pilot flow` runs a routine flow in one call (Jev picks each step); dump, click, type, key, menu cover everything else. Use for any desktop app or system dialog ('open Displays settings', 'configure X in app Y', 'approve the admin password prompt'). Not for websites or phones, and not for apps with no accessibility tree (games, canvases) — those need screen-driven computer use."
+description: "Operate macOS apps the way a person would, without screenshots and without taking the user's pointer or focus: click buttons, choose menus, fill fields, press keys, answer password and permission dialogs. `mac flow` runs a routine flow in one call (Jev picks each step); dump, click, type, key, menu cover everything else. Use for any desktop app or system dialog ('open Displays settings', 'configure X in app Y', 'approve the admin password prompt'). Not for websites or phones, and not for apps with no accessibility tree (games, canvases) — those need screen-driven computer use."
 ---
 
 # mac-pilot
 
-`M=<this skill folder>/bin/mac-pilot`. Every command takes `--app NAME` (exact app name or
+`M=<this skill folder>/bin/mac`. Every command takes `--app NAME` (exact app name or
 bundle id); `$M apps` lists the apps that have a window.
 
 | Command | Does |
@@ -46,7 +46,7 @@ $M type --app "System Settings" Search "Night Shift"
 - **Privacy switches** in System Settings (Privacy & Security → Automation and
   the like) do not flip from an accessibility press: macOS guards them. Answer
   the permission prompt when it appears instead.
-- **Locked screen.** Apps keep running and `mac-pilot` still reads them while
+- **Locked screen.** Apps keep running and `mac` still reads them while
   locked. The lock screen is the `loginwindow` app; unlock it with the same
   password, only after confirming the lock so the password can never land in an
   app:
@@ -58,12 +58,12 @@ $M type --app "System Settings" Search "Night Shift"
 
 ## How it works
 
-A small Swift driver, `lib/ax.swift`, does the Accessibility work. `mac-pilot` builds
+A small Swift driver, `lib/ax.swift`, does the Accessibility work. `mac` builds
 it with `swiftc` on first use (and again whenever the source changes) into
-`~/.cache/mac-pilot`. Each call is one short process that reads the window fresh, so
+`~/.cache/mac`. Each call is one short process that reads the window fresh, so
 nothing is kept between calls; `@N` refs are checked against the label and role
 the last `dump` saw. The Accessibility permission belongs to the app that runs
-`mac-pilot` (the terminal or agent app); `setup` asks for it once.
+`mac` (the terminal or agent app); `setup` asks for it once.
 
 `flow` is the driver for the Jev loop in `lib/jev.mjs`: each step reads the app
 once and asks TypeSafe's Jev (~0.3 s) for the next operation and target in one

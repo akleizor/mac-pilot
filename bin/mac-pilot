@@ -1,3 +1,0 @@
-#!/usr/bin/env bash
-# mac-pilot — operate macOS apps through Accessibility (dump, click, type, key, menu, flow); see ../SKILL.md
-exec node "$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)/lib/mac.mjs" "$@"
