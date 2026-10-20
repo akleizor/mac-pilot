@@ -7,6 +7,6 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: '22' }
-      - run: node --check lib/mac.mjs && node --check lib/jev.mjs && node lib/jev.mjs
+      - run: node --check lib/mac.mjs && node --check lib/jev.mjs && node --check lib/plan.mjs && node lib/jev.mjs && node lib/plan.mjs
       - run: swiftc -O lib/ax.swift -o /tmp/mac-ax && /tmp/mac-ax trusted
       - run: node setup-check.mjs

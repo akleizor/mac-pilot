@@ -11,6 +11,7 @@ bundle id); `$M apps` lists the apps that have a window.
 | Command | Does |
 |---|---|
 | `flow "GOAL"` | A routine flow; Jev picks each step (2–4 s) |
+| `plan FILE` | A JSON plan: deterministic steps, checked postconditions, one bounded recovery |
 | `dump` | Controls as `@N [Role] "label" = value (state)`, then the window's text |
 | `click <@N\|label>` | Press a control, or select a list or sidebar row |
 | `type <@N\|label> TEXT` | Set a field; `--secret ENVVAR` reads the text from the environment; `--keys` types real keystrokes |
@@ -56,6 +57,52 @@ $M type --app "System Settings" Search "Night Shift"
     $M type --app loginwindow "Enter Password" --secret PW && $M key --app loginwindow return
   ```
 
+## Plans: deterministic steps with a checkpoint
+
+`$M plan FILE --app NAME` (a path or `-` for stdin) runs a JSON plan: steps are
+pressed deterministically, each with the postcondition it must leave on screen,
+and the whole plan is validated before the first press.
+
+```json
+{
+  "goal": "Open General, then its About page",
+  "steps": [
+    { "click": "General", "post": [{ "window": "General" }] },
+    { "click": "About",   "post": [{ "window": "About" }] }
+  ],
+  "success": [ { "window": "About" }, { "exists": "macOS" } ],
+  "recovery": 1
+}
+```
+
+- **Steps** are `{"click": label}`, `{"type": label, "text": "..."}` or
+  `{"key": "cmd+..."}`, plus `post`: what the window must show once the step has
+  acted. A label resolves on a fresh read exactly like `click`/`type` do; `@N`
+  refs are rejected (they go stale between reads), and a missing or ambiguous
+  label fails the step instead of guessing.
+- **Assertions** state only what a dump can observe: `{"window": "About"}`
+  (the window's title contains it), `{"exists": "macOS"}` (a control label or
+  the window's text contains it) or `{"absent": "..."}`. No shell, no callbacks.
+- **The checkpoint.** After each step the window is re-read and checked against
+  `post`. The first mismatch — including a control that is no longer on screen —
+  stops the script; with budget left, the Jev loop then replans the whole goal
+  from the current window (`"recovery": 0–3`, default 1; steps after the failed
+  one are not re-run). A recovery that stops (risky label, BLOCKED, low
+  confidence) is final: nothing further is attempted.
+- **The goal is checked independently.** After the last step (or a recovery), a
+  fresh read must satisfy `success` on its own. A click's exit status, the
+  steps' postconditions or a DONE never stand in for it.
+- **Risky steps are refused up front.** A plan pressing anything that looks
+  irreversible (delete, buy, sign out …) is rejected before the first press;
+  there is no `--allow-risky` for plans — that stays a manual, human-chosen
+  command.
+- `--dry-run` resolves and validates every step against the current window and
+  executes nothing.
+
+The command prints one line per step, any recovery steps, and a final
+`plan done:`/`plan failed:` line with the full result as JSON: per-step action
+and verify timings, recovery count, the final window and each check.
+
 ## How it works
 
 A small Swift driver, `lib/ax.swift`, does the Accessibility work. `mac` builds
@@ -72,6 +119,11 @@ request. Jev only chooses among what the dump listed; text comes from
 low confidence, BLOCKED, a stuck screen or a risky label (delete, buy, sign
 out: `--allow-risky`), and a goal that ends on a page it can reach directly is
 verified by that page's title.
+
+`plan` (`lib/plan.mjs`) is the hybrid on top of both: the plan's steps are
+pressed deterministically and each is verified against what the window actually
+shows; only a mismatch hands control to the Jev loop, and the goal is accepted
+only on the plan's own assertions against a fresh read.
 
 The decision model is pluggable: `TYPESAFE_API_KEY` uses Jev; or set `DECISION_URL`
 (OpenAI-compatible, e.g. a company gateway or local model) + `DECISION_MODEL` to drive
