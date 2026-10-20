@@ -26,12 +26,13 @@ done: 1 action(s) in 1.3s — {"app":"System Settings","window":"About"} (verify
 - **Runs a flow** (`flow "GOAL"`): each step reads the app and asks
   [TypeSafe Jev](https://typesafe.ai) to choose the next control (~0.3 s). It
   only chooses among what is on screen and stops on anything risky.
-- **Runs a plan** (`plan FILE`): deterministic steps, each with the observable
-  postcondition it must leave on screen. The first mismatch stops the script and
-  replans the whole goal from the current window through the flow loop — one
-  bounded recovery — and the goal is accepted only when the plan's own
-  assertions hold on a fresh read. A step that looks irreversible is refused
-  before the first press.
+- **Runs a plan** (`plan FILE`): deterministic click/type steps, each with the
+  observable postcondition it must leave on screen. The first mismatch stops the
+  script and replans the whole goal from the current window through the flow
+  loop — at most one recovery — and the goal is accepted only when the plan's
+  own assertions hold on a fresh read. A step whose wording, or whose resolved
+  control, looks irreversible stops the plan with nothing pressed and no
+  recovery; keys are never plan steps.
 - **Leaves the Mac alone.** Presses are accessibility presses and keys go to the
   named app, so your pointer, keyboard focus and front app never move. You can
   keep working while an agent drives another window.

@@ -75,29 +75,35 @@ and the whole plan is validated before the first press.
 }
 ```
 
-- **Steps** are `{"click": label}`, `{"type": label, "text": "..."}` or
-  `{"key": "cmd+..."}`, plus `post`: what the window must show once the step has
-  acted. A label resolves on a fresh read exactly like `click`/`type` do; `@N`
+- **Steps** are `{"click": label}` or `{"type": label, "text": "..."}`, plus
+  `post`: what the window must show once the step has acted. There are no key
+  steps: `return`, `space` or `cmd+delete` press whatever is default or focused,
+  which no label check can see, so keys stay manual commands. A label resolves on a fresh read exactly like `click`/`type` do; `@N`
   refs are rejected (they go stale between reads), and a missing or ambiguous
   label fails the step instead of guessing.
 - **Assertions** state only what a dump can observe: `{"window": "About"}`
   (the window's title contains it), `{"exists": "macOS"}` (a control label or
   the window's text contains it) or `{"absent": "..."}`. No shell, no callbacks.
-- **The checkpoint.** After each step the window is re-read and checked against
-  `post`. The first mismatch — including a control that is no longer on screen —
-  stops the script; with budget left, the Jev loop then replans the whole goal
-  from the current window (`"recovery": 0–3`, default 1; steps after the failed
-  one are not re-run). A recovery that stops (risky label, BLOCKED, low
-  confidence) is final: nothing further is attempted.
+- **The checkpoint.** After each press the window is re-read until it differs
+  from the pre-press read, then `post` is polled for up to 1 s (an async update
+  is not a mismatch). The first mismatch — a label no longer on screen, a ref the
+  driver refuses as stale before pressing, or a failed `post` — stops the script;
+  the Jev loop then replans the whole goal from the current window once
+  (`"recovery": 0` or `1`, default 1; steps after the failed one are not re-run,
+  and there is never a second recovery). A recovery that stops (risky label,
+  BLOCKED, low confidence) is final.
 - **The goal is checked independently.** After the last step (or a recovery), a
   fresh read must satisfy `success` on its own. A click's exit status, the
   steps' postconditions or a DONE never stand in for it.
-- **Risky steps are refused up front.** A plan pressing anything that looks
-  irreversible (delete, buy, sign out …) is rejected before the first press;
-  there is no `--allow-risky` for plans — that stays a manual, human-chosen
-  command.
+- **Risky steps are refused, on what they resolve to.** A plan whose wording
+  looks irreversible (delete, buy, sign out …) is rejected before the first read;
+  at run time the control a label RESOLVES to is checked again ("All Data" can
+  resolve to "Delete All Data"), and a generic OK/Continue/Confirm on a window
+  whose text looks irreversible is refused too. Either stops the plan outright:
+  nothing pressed, no recovery. There is no `--allow-risky` for plans — that
+  stays a manual, human-chosen command.
 - `--dry-run` resolves and validates every step against the current window and
-  executes nothing.
+  executes nothing (no press, no recovery); it fails if a step hits a safety stop.
 
 The command prints one line per step, any recovery steps, and a final
 `plan done:`/`plan failed:` line with the full result as JSON: per-step action
