@@ -124,7 +124,10 @@ request. Jev only chooses among what the dump listed; text comes from
 `--value NAME=TEXT` / `--secret NAME=ENVVAR`. It stops and lists the choices on
 low confidence, BLOCKED, a stuck screen or a risky label (delete, buy, sign
 out: `--allow-risky`), and a goal that ends on a page it can reach directly is
-verified by that page's title.
+verified by that page's title. A press the driver refuses as a stale ref (the
+control moved between the read and the press; nothing pressed) re-reads the
+current window and decides again, at most twice per run within the step budget;
+the old ref is never retried.
 
 `plan` (`lib/plan.mjs`) is the hybrid on top of both: the plan's steps are
 pressed deterministically and each is verified against what the window actually
