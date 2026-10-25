@@ -7,6 +7,8 @@ set -u
 cd "$(dirname "$0")/.."
 M=bin/mac A="Google Chrome" T=$(mktemp -d)
 pgrep -xq "Google Chrome" && { echo "quit Google Chrome first: the check runs its own"; exit 2; }
+[ "$(ioreg -n Root -d1 -a | plutil -extract IOConsoleUsers.0.CGSSessionScreenIsLocked raw - 2>/dev/null)" = true ] \
+  && { echo "the screen is locked: background input needs an unlocked session, nothing run"; exit 2; }
 front() { osascript -e 'tell application "System Events" to get bundle identifier of first process whose frontmost is true'; }
 before=$(front)
 "$M" setup >/dev/null 2>&1; D=~/.cache/mac/mac-ax-$(shasum -a 256 lib/ax.swift | cut -c1-12) # the driver mac builds
