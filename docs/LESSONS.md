@@ -94,3 +94,22 @@ native apps (System Settings). Check each one on your machine before relying on 
   action. Use demo or test accounts for order tests.
 - Stop after about 3 failed tries of one approach and report. Silent retrying cost far
   more time than any fix did.
+
+## 6. Found while building the gestures (macOS 27, 2026-10-26)
+- Right-click posted through both SkyLight and `CGEvent.postToPid` fires the context
+  menu twice; post right-clicks through SkyLight only.
+- A background Chromium page ignores synthetic wheel events, with or without the window
+  fields, line or pixel units and scroll phases; the same event works once it is in
+  front. Arrow keys through the key-window recipe scroll it; `AXScrollToVisible`
+  brings one element into view.
+- A Chromium window covered from its first moment never builds its page AX tree.
+  Setting `AXEnhancedUserInterface` on the app (Chrome; it answers with an error but
+  turns on) or `AXManualAccessibility` (Electron) builds it within about 2 s.
+- Pin a window awake only while some of it is actually uncovered:
+  `kCGWindowIsOnscreen` stays true for a covered window, and pinning then keeps the
+  page asleep for good.
+- Apps take the front when their first window opens, even with `open -g` or
+  `NSWorkspace.OpenConfiguration.activates = false` and `hides = true`. The only remedy
+  is to watch the front and hand it back at once.
+- Timings with the calibrated waits: a background click about 150 ms end to end
+  (Node start, read, act), a drag about 300 ms, typing a field under 100 ms.

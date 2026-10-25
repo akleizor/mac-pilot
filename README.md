@@ -22,6 +22,9 @@ done: 1 action(s) in 1.3s — {"app":"System Settings","window":"About"} (verify
 - **Reads a window** as `@N` control references and its text (`dump`).
 - **Acts** by label or reference: `click`, `type`, `key`, `menu`, `open`; a
   canvas takes `click --at X,Y`, and `shot` captures the window even when covered.
+- **Every gesture in the background**: click, double-click, right-click, drag,
+  scroll, typing and shortcuts, without moving your pointer or taking the front
+  (`test/background.sh` checks each one against a covered Chrome window).
 - **Works on Electron and Chromium apps** (TradingView, Lark, VS Code) in the
   background, through the SkyLight recipe of
   [open-computer-use](https://github.com/iFurySt/open-computer-use) (MIT).

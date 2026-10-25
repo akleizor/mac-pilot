@@ -1,0 +1,14 @@
+<!doctype html><html><head><title>ready</title></head>
+<body style="margin:0;height:3000px;font:20px sans-serif">
+<input id="f" placeholder="field" style="position:fixed;top:10px;left:10px;width:300px">
+<div style="position:fixed;top:60px;left:10px;width:400px;height:300px;background:#cde" id="pad">pad</div>
+<script>
+const log=[];const t=s=>{log.push(s);document.title=log.slice(-4).join(' ')};
+pad.onclick=e=>t('click');pad.ondblclick=e=>t('dbl');
+pad.oncontextmenu=e=>{e.preventDefault();t('right')};
+let down=null;pad.onmousedown=e=>{down=[e.clientX,e.clientY]};
+document.onmouseup=e=>{if(down&&Math.hypot(e.clientX-down[0],e.clientY-down[1])>30)t('drag'+Math.round(e.clientX-down[0]));down=null};
+window.onscroll=()=>{clearTimeout(window.s);window.s=setTimeout(()=>t('y'+Math.round(scrollY)),150)};
+f.oninput=()=>t('val='+f.value);
+document.onkeydown=e=>t('key:'+e.key);
+</script></body></html>

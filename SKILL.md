@@ -14,7 +14,9 @@ bundle id); `$M apps` lists the apps that have a window.
 | `plan FILE` | A JSON plan: deterministic steps, checked postconditions, one bounded recovery |
 | `dump` | Controls as `@N [Role] "label" = value (state)`, then the window's text |
 | `click <@N\|label>` | Press a control, or select a list or sidebar row |
-| `click --at X,Y` | Click a window-local point (canvases: charts, maps) |
+| `click --at X,Y` | Click a window-local point (canvases: charts, maps); `--right` / `--double` work on any click |
+| `drag --at X,Y --to X,Y` | Drag between window-local points |
+| `scroll <up\|down\|left\|right> [@N\|label]` | Scroll the window (`--lines N`, default 5; `--at X,Y`), or bring a control into view |
 | `shot FILE.png` | Screenshot the window, even covered or on another Desktop (Screen Recording) |
 | `type <@N\|label> TEXT` | Set a field; `--secret ENVVAR` reads the text from the environment; `--keys` types real keystrokes |
 | `key <combo>` | `return`, `escape`, `tab`, `cmd+a`, `cmd+shift+n` … sent to that app |
@@ -54,6 +56,13 @@ $M type --app "System Settings" Search "Night Shift"
   read also keeps an on-screen Chromium window awake, so it still takes input
   once covered; a window that was hidden before `mac` first saw it must come on
   screen once (flipping Desktops shows on screen: ask first).
+- **Scrolling a Chromium app** in the background goes by arrow keys (its page
+  ignores synthetic wheel events unless in front), so it scrolls whatever has
+  focus: after `type` into a field, the arrows move the caret instead. `scroll
+  down @N` brings that control into view by an AX action, on any app.
+- **Launching never keeps the front.** Most apps take the front when their first
+  window opens, `open -g` or not; `mac` watches for 1.5 s and hands it straight
+  back to the app you were in. Prefer driving apps that are already running.
 - **Text-only lists** (a chat list) have no buttons. Use the app's own search
   (`key cmd+k`), type, `key return`, then verify, e.g. by the input field's label.
 - **Canvases** (charts, maps) have no controls: `click --at X,Y` (window-local
