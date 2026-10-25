@@ -5,13 +5,15 @@
 // launched it (the terminal or agent app).
 import AppKit
 import ApplicationServices
+import ImageIO
 
 let KIND: [String: String] = [
   "AXButton": "CLICK", "AXCheckBox": "CLICK", "AXRadioButton": "CLICK", "AXPopUpButton": "CLICK",
   "AXMenuButton": "CLICK", "AXLink": "CLICK", "AXMenuItem": "CLICK", "AXDisclosureTriangle": "CLICK",
   "AXRow": "CLICK", "AXTextField": "TYPE_TEXT", "AXTextArea": "TYPE_TEXT", "AXComboBox": "TYPE_TEXT",
 ]
-let MAX_NODES = 1500, MAX_ITEMS = 80
+// 80 items / 1500 nodes hid most of a big Electron app; these reach its deep panels
+let MAX_NODES = 40000, MAX_ITEMS = 250
 let FIELDS = ["AXRole", "AXSubrole", "AXTitle", "AXDescription", "AXValue", "AXEnabled",
               "AXSelected", "AXPlaceholderValue", "AXChildren"]
 
@@ -19,7 +21,7 @@ struct Item: Codable {
   var ref: String, role: String, label: String, kind: String
   var value: String? = nil, state: String? = nil, selected: Bool? = nil
 }
-struct Dump: Codable { var app: String, window: String, items: [Item], context: [String] }
+struct Dump: Codable { var app: String, window: String, items: [Item], context: [String], locked: Bool? = nil }
 
 func fail(_ msg: String) -> Never { print(msg); exit(1) }
 
@@ -74,12 +76,16 @@ func appRoot(_ name: String) -> (NSRunningApplication, AXUIElement) {
   return (app, root)
 }
 
-func read(_ name: String) -> (NSRunningApplication, Dump, [AXUIElement]) {
+// dialogs such as SecurityAgent's password prompt have no focused or main window
+func window(_ root: AXUIElement) -> AXUIElement? {
+  element(attr(root, "AXFocusedWindow")) ?? element(attr(root, "AXMainWindow"))
+    ?? (attr(root, "AXWindows") as? [AXUIElement])?.first
+}
+
+func read(_ name: String) -> (NSRunningApplication, Dump, [AXUIElement], AXUIElement) {
   let (app, root) = appRoot(name)
-  // dialogs such as SecurityAgent's password prompt have no focused or main window
-  guard let win = element(attr(root, "AXFocusedWindow")) ?? element(attr(root, "AXMainWindow"))
-          ?? (attr(root, "AXWindows") as? [AXUIElement])?.first
-  else { fail("\(app.localizedName ?? name) has no window") }
+  guard let win = window(root) else { fail("\(app.localizedName ?? name) has no window") }
+  if sky(app), let wid = windowID(win) { keepAwake(wid) }
   var items: [Item] = [], els: [AXUIElement] = [], context: [String] = [], seen = 0
   func walk(_ el: AXUIElement, _ depth: Int) {
     seen += 1
@@ -110,17 +116,22 @@ func read(_ name: String) -> (NSRunningApplication, Dump, [AXUIElement]) {
     for c in (a["AXChildren"] as? [AXUIElement]) ?? [] { walk(c, depth + 1) }
   }
   walk(win, 0)
-  return (app, Dump(app: app.localizedName ?? name, window: clean(attr(win, "AXTitle")), items: items, context: context), els)
+  // while the screen is locked the window attributes return the app element: reads work, mouse input does not
+  let locked = clean(attr(win, "AXRole")) == "AXApplication" || screenLocked()
+  return (app, Dump(app: app.localizedName ?? name, window: clean(attr(win, "AXTitle")), items: items, context: context,
+                    locked: locked ? true : nil), els, win)
 }
 
 // target resolves a label (exact, then unique substring) among controls of `kind`,
 // or the @N of the last dump, given as the label and role it had then (`was`),
 // against this fresh read: gone or ambiguous is refused, never guessed.
 func target(_ d: Dump, _ spec: String, kind: String, was: (String, String)?) -> Item {
-  var match: (Item) -> Bool
+  let match: (Item) -> Bool
   var pool = d.items
-  if let (label, role) = was {
-    match = { $0.label == label && $0.role == role }
+  if let (label, role) = was { // @N is its own slot: matching label + role alone failed when three buttons shared a label
+    guard let n = Int(spec.dropFirst()), n >= 1, n <= d.items.count, d.items[n - 1].label == label, d.items[n - 1].role == role
+    else { fail("\(spec) no longer names \"\(label)\" [\(role)] (screen changed?); run mac dump") }
+    return d.items[n - 1]
   } else {
     pool = pool.filter { $0.kind == kind }
     let exact = pool.filter { $0.label == spec }
@@ -180,8 +191,190 @@ func typeText(_ text: String, pid: pid_t?) {
   }
 }
 
+// ---------- background input for Chromium/Electron (private SkyLight) ----------
+// Chromium ignores AX presses and drops app-targeted events unless its window is active.
+// The recipe is open-computer-use's sky_click/sky_key (github.com/iFurySt/open-computer-use,
+// MIT, Copyright (c) 2026 Leo; after Cua and yabai): make the app active without raising it, stamp the window into
+// every event, post through SkyLight and the public path. A missing symbol fails the call.
+let SKYLIGHT = dlopen("/System/Library/PrivateFrameworks/SkyLight.framework/SkyLight", RTLD_LAZY)
+let APPSVC = dlopen("/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices", RTLD_LAZY)
+func sym<T>(_ lib: UnsafeMutableRawPointer?, _ name: String, _: T.Type) -> T? {
+  guard let lib, let p = dlsym(lib, name) else { return nil }
+  return unsafeBitCast(p, to: T.self)
+}
+let slPostToPid = sym(SKYLIGHT, "SLEventPostToPid", (@convention(c) (pid_t, UnsafeMutableRawPointer?) -> Void).self)
+let slSetField = sym(SKYLIGHT, "SLEventSetIntegerValueField", (@convention(c) (UnsafeMutableRawPointer?, UInt32, Int64) -> Void).self)
+let slSetWindowLocation = sym(SKYLIGHT, "CGEventSetWindowLocation", (@convention(c) (UnsafeMutableRawPointer?, Double, Double) -> Void).self)
+let slPostRecord = sym(SKYLIGHT, "SLPSPostEventRecordTo", (@convention(c) (UnsafeRawPointer?, UnsafePointer<UInt8>?) -> Int32).self)
+let slConnection = sym(SKYLIGHT, "SLSMainConnectionID", (@convention(c) () -> UInt32).self)
+let slOcclusion = sym(SKYLIGHT, "SLSPackagesEnableWindowOcclusionNotifications", (@convention(c) (UInt32, CGWindowID, UInt8, UnsafeMutablePointer<UInt8>?) -> Int32).self)
+let slCapture = sym(SKYLIGHT, "SLSHWCaptureWindowList", (@convention(c) (UInt32, UnsafePointer<CGWindowID>, Int32, UInt32) -> Unmanaged<CFArray>?).self)
+let getPSN = sym(APPSVC, "GetProcessForPID", (@convention(c) (pid_t, UnsafeMutableRawPointer?) -> Int32).self)
+let axWindowID = sym(APPSVC, "_AXUIElementGetWindow", (@convention(c) (AXUIElement, UnsafeMutablePointer<CGWindowID>) -> AXError).self)
+
+// sky: the app is built on Chromium (Electron, CEF, Chrome), so it needs the SkyLight path
+func sky(_ app: NSRunningApplication) -> Bool {
+  guard let dir = app.bundleURL?.appendingPathComponent("Contents/Frameworks").path,
+        let names = try? FileManager.default.contentsOfDirectory(atPath: dir) else { return false }
+  return names.contains { $0.hasPrefix("Electron Framework") || $0.hasPrefix("Chromium Embedded Framework")
+    || ($0.hasSuffix(" Framework.framework") && ($0.contains("Chrome") || $0.contains("Chromium"))) }
+}
+
+// inWeb: the control sits in a web area, where an AX press is often ignored
+func inWeb(_ el: AXUIElement) -> Bool {
+  var cur: AXUIElement? = el
+  for _ in 0..<40 {
+    guard let c = cur else { return false }
+    if clean(attr(c, "AXRole")) == "AXWebArea" { return true }
+    cur = element(attr(c, "AXParent"))
+  }
+  return false
+}
+
+func screenLocked() -> Bool {
+  ((CGSessionCopyCurrentDictionary() as? [String: Any])?["CGSSessionScreenIsLocked"] as? Bool) == true
+}
+
+func windowID(_ win: AXUIElement) -> CGWindowID? {
+  var wid: CGWindowID = 0
+  guard let axWindowID, axWindowID(win, &wid) == .success, wid != 0 else { return nil }
+  return wid
+}
+
+func frame(_ el: AXUIElement) -> CGRect? {
+  var p = CGPoint.zero, s = CGSize.zero
+  guard let pv = attr(el, "AXPosition"), let sv = attr(el, "AXSize"),
+        AXValueGetValue(pv as! AXValue, .cgPoint, &p), AXValueGetValue(sv as! AXValue, .cgSize, &s) else { return nil }
+  return CGRect(origin: p, size: s)
+}
+
+// keepAwake: once macOS marks a Chromium window hidden (covered, or on another Desktop) the
+// page stops taking input. Turning off its occlusion notifications while it is on screen
+// pins it awake from then on; called while hidden it would pin it asleep, so it waits.
+func keepAwake(_ wid: CGWindowID) {
+  guard let slConnection, let slOcclusion,
+        let info = (CGWindowListCopyWindowInfo(.optionIncludingWindow, wid) as? [[String: Any]])?.first,
+        (info[kCGWindowIsOnscreen as String] as? Bool) == true else { return }
+  var prev: UInt8 = 0
+  _ = slOcclusion(slConnection(), wid, 0, &prev)
+}
+
+func usable(_ app: NSRunningApplication) {
+  if screenLocked() { fail("the screen is locked: reads still work, but mouse input and screenshots cannot") }
+  if app.isHidden { fail("\(app.localizedName ?? "app") is hidden; unhide it first") }
+  guard slPostToPid != nil, slSetField != nil, slSetWindowLocation != nil, slPostRecord != nil, getPSN != nil
+  else { fail("this macOS lacks the SkyLight functions background input needs") }
+}
+
+func record(_ wid: CGWindowID, _ bytes: [Int: UInt8]) -> [UInt8] {
+  var r = [UInt8](repeating: 0, count: 0xF8)
+  r[0x04] = 0xF8
+  for i in 0..<4 { r[0x3C + i] = UInt8(truncatingIfNeeded: wid >> (8 * UInt32(i))) } // window id, little-endian
+  for (i, v) in bytes { r[i] = v }
+  return r
+}
+
+// activeWhile runs body with the app active (and for keys its window key) without raising it.
+func activeWhile(_ app: NSRunningApplication, _ wid: CGWindowID, keys: Bool, _ body: () -> Void) {
+  usable(app)
+  let pid = app.processIdentifier
+  if NSWorkspace.shared.frontmostApplication?.processIdentifier == pid { body(); return }
+  var psn = [UInt8](repeating: 0, count: 8)
+  guard psn.withUnsafeMutableBytes({ getPSN!(pid, $0.baseAddress) }) == 0 else { fail("no process serial number for \(pid)") }
+  let post = { (r: [UInt8]) in _ = psn.withUnsafeBytes { p in r.withUnsafeBufferPointer { slPostRecord!(p.baseAddress, $0.baseAddress) } } }
+  post(record(wid, [0x08: 0x0D, 0x8A: 1]))
+  usleep(10_000)
+  if keys {
+    var r = record(wid, [0x3A: 0x10])
+    for i in 0x20..<0x30 { r[i] = 0xFF }
+    for kind: UInt8 in [1, 2] { r[0x08] = kind; post(r) }
+    usleep(60_000) // at 20 ms the first keystroke was dropped
+  }
+  body()
+  usleep(100_000) // Chromium's renderer takes the last event before the app goes inactive
+  post(record(wid, [0x08: 0x0D, 0x8A: 2]))
+}
+
+// skyClick clicks at a window-local point: moved(target), a primer down/up at (-1,-1),
+// then down/up at the target, each stamped with the window and posted both ways.
+func skyClick(_ app: NSRunningApplication, _ win: AXUIElement, at local: CGPoint) {
+  guard let wid = windowID(win), let wf = frame(win) else { fail("no window frame (screen locked?)") }
+  guard local.x >= 0, local.y >= 0, local.x < wf.width, local.y < wf.height
+  else { fail("\(Int(local.x)),\(Int(local.y)) is outside the \(Int(wf.width))x\(Int(wf.height)) window") }
+  let pid = app.processIdentifier, src = CGEventSource(stateID: .hidSystemState)
+  let group = Int64(DispatchTime.now().uptimeNanoseconds % 1_000_000_000)
+  let steps: [(CGEventType, Bool, Int64, Int64, useconds_t)] = [ // type, at target, clickState, phase, wait
+    (.mouseMoved, true, 0, 2, 15_000), (.leftMouseDown, false, 1, 1, 1_000), (.leftMouseUp, false, 1, 2, 100_000),
+    (.leftMouseDown, true, 1, 3, 1_000), (.leftMouseUp, true, 1, 3, 0),
+  ]
+  activeWhile(app, wid, keys: false) {
+    for (type, atTarget, clicks, phase, wait) in steps {
+      let w = atTarget ? local : CGPoint(x: -1, y: -1)
+      let screen = atTarget ? CGPoint(x: wf.minX + local.x, y: wf.minY + local.y) : w
+      let e = CGEvent(mouseEventSource: src, mouseType: type, mouseCursorPosition: screen, mouseButton: .left)!
+      let ref = Unmanaged.passUnretained(e).toOpaque()
+      let fields: [(UInt32, Int64)] = [(0, phase), (1, clicks), (3, 0), (7, 3), (40, Int64(pid)),
+                                       (51, Int64(wid)), (58, group), (91, Int64(wid)), (92, Int64(wid))]
+      for (f, v) in fields { slSetField!(ref, f, v) }
+      slSetWindowLocation!(ref, w.x, w.y)
+      slPostToPid!(pid, ref)
+      e.postToPid(pid)
+      usleep(wait)
+    }
+  }
+}
+
+// toApp delivers app-targeted keys; a Chromium app drops them unless its window is active and key.
+func toApp(_ app: NSRunningApplication, _ body: () -> Void) {
+  guard sky(app) else { return body() }
+  let root = AXUIElementCreateApplication(app.processIdentifier)
+  guard let win = window(root), let wid = windowID(win) else { fail("\(app.localizedName ?? "app") has no window for keys") }
+  activeWhile(app, wid, keys: true, body)
+}
+
+// shortcut presses the menu item bound to a cmd combo: a background Chromium app drops
+// synthetic cmd keys, but its menu bar still takes an AX press.
+func shortcut(_ app: NSRunningApplication, _ combo: String) -> Bool {
+  let parts = combo.lowercased().split(separator: "+").map(String.init)
+  guard parts.contains(where: { MODS[$0] == .maskCommand }), let key = parts.last, key.count == 1 else { return false }
+  var want = 0 // AXMenuItemCmdModifiers: shift 1, option 2, control 4 (cmd implied)
+  for p in parts { switch MODS[p] { case .maskShift?: want |= 1; case .maskAlternate?: want |= 2; case .maskControl?: want |= 4; default: break } }
+  func find(_ el: AXUIElement, _ depth: Int) -> AXUIElement? {
+    if depth > 6 { return nil }
+    for c in children(el) {
+      if clean(attr(c, "AXRole")) == "AXMenuItem", (attr(c, "AXEnabled") as? Bool) != false,
+         clean(attr(c, "AXMenuItemCmdChar")).lowercased() == key,
+         ((attr(c, "AXMenuItemCmdModifiers") as? NSNumber)?.intValue ?? 0) == want { return c }
+      if let hit = find(c, depth + 1) { return hit }
+    }
+    return nil
+  }
+  guard let bar = element(attr(AXUIElementCreateApplication(app.processIdentifier), "AXMenuBar")),
+        let item = find(bar, 0) else { return false }
+  return AXUIElementPerformAction(item, "AXPress" as CFString) == .success
+}
+
+// shot captures one window's backing store, even covered or on another Desktop (needs Screen Recording).
+func shot(_ app: NSRunningApplication, _ win: AXUIElement, _ path: String) {
+  if screenLocked() { fail("the screen is locked: screenshots cannot work") }
+  guard var wid = windowID(win), let slConnection, let slCapture else { fail("window capture is unavailable") }
+  guard let arr = slCapture(slConnection(), &wid, 1, 0x800)?.takeRetainedValue(), CFArrayGetCount(arr) > 0
+  else { fail("capture returned nothing: grant Screen Recording to the app running mac") }
+  let img = unsafeBitCast(CFArrayGetValueAtIndex(arr, 0), to: CGImage.self)
+  guard let dest = CGImageDestinationCreateWithURL(URL(fileURLWithPath: path) as CFURL, "public.png" as CFString, 1, nil)
+  else { fail("cannot write \(path)") }
+  CGImageDestinationAddImage(dest, img, nil)
+  guard CGImageDestinationFinalize(dest) else { fail("cannot write \(path)") }
+  print("saved \(img.width)x\(img.height) \(path)")
+}
+
 // ---------- actions ----------
-func press(_ el: AXUIElement) {
+// press clicks a control: an AX press for native controls, the SkyLight click at its centre for Chromium ones.
+func press(_ app: NSRunningApplication, _ win: AXUIElement, _ el: AXUIElement) {
+  if sky(app) || inWeb(el) {
+    guard let f = frame(el), let wf = frame(win) else { fail("the control has no frame (screen locked?)") }
+    return skyClick(app, win, at: CGPoint(x: f.midX - wf.minX, y: f.midY - wf.minY))
+  }
   var names: CFArray?
   AXUIElementCopyActionNames(el, &names)
   if ((names as? [String]) ?? []).contains("AXPress") { AXUIElementPerformAction(el, "AXPress" as CFString) }
@@ -247,21 +440,35 @@ if !AXIsProcessTrusted() {
   fail("Accessibility is not granted to the app running mac-ops; run mac-ops setup")
 }
 let was = take("--was", count: 2).map { ($0[0], $0[1]) }
+let at = take("--at").flatMap { v -> CGPoint? in
+  let n = v[0].split(separator: ",").compactMap { Double($0) }
+  return n.count == 2 ? CGPoint(x: n[0], y: n[1]) : nil
+}
 let keys = args.contains("--keys")
 args.removeAll { $0 == "--keys" }
 
 switch (cmd, args.count) {
 case ("apps", _): apps()
 case ("dump", 1):
-  let (_, d, _) = read(args[0])
+  let (_, d, _, _) = read(args[0])
   print(String(data: try! JSONEncoder().encode(d), encoding: .utf8)!)
+case ("click", 1): // canvases (charts, maps) have no controls: a window-local point, then confirm with shot
+  guard let at else { fail("click needs a target, or --at X,Y (window-local points)") }
+  let (app, root) = appRoot(args[0])
+  guard let win = window(root) else { fail("\(args[0]) has no window") }
+  skyClick(app, win, at: at)
+  print("clicked at \(Int(at.x)),\(Int(at.y))")
+case ("shot", 2):
+  let (app, root) = appRoot(args[0])
+  guard let win = window(root) else { fail("\(args[0]) has no window") }
+  shot(app, win, args[1])
 case ("click", 2):
-  let (_, d, els) = read(args[0])
+  let (app, d, els, win) = read(args[0])
   let it = target(d, args[1], kind: "CLICK", was: was)
-  press(els[Int(it.ref)! - 1])
+  press(app, win, els[Int(it.ref)! - 1])
   print("clicked \(it.role) \"\(it.label)\"")
 case ("type", 2): // the text arrives on stdin, never on a command line
-  let (app, d, els) = read(args[0])
+  let (app, d, els, _) = read(args[0])
   let it = target(d, args[1], kind: "TYPE_TEXT", was: was)
   let el = els[Int(it.ref)! - 1], text = stdinText()
   if keys {
@@ -271,24 +478,26 @@ case ("type", 2): // the text arrives on stdin, never on a command line
     else { fail("\(args[0]) is not in front; keys not sent") }
     _ = setValue(el, "")
     typeText(text, pid: nil)
-  } else if !setValue(el, text) { typeText(text, pid: app.processIdentifier) } // some web views refuse a value
+  } else if !setValue(el, text) { toApp(app) { typeText(text, pid: app.processIdentifier) } } // some web views refuse a value
   print("typed into \(it.role) \"\(it.label)\"")
 case ("act", 3): // flow: act APP REF OP --was LABEL ROLE; the ref must still name the same control
-  let (app, d, els) = read(args[0])
-  if args[2] == "PRESS_ENTER" { _ = keyStroke("return", pid: app.processIdentifier); print("ok"); exit(0) }
+  let (app, d, els, win) = read(args[0])
+  if args[2] == "PRESS_ENTER" { toApp(app) { _ = keyStroke("return", pid: app.processIdentifier) }; print("ok"); exit(0) }
   guard let n = Int(args[1]), n >= 1, n <= d.items.count, let (label, role) = was,
         d.items[n - 1].label == label, d.items[n - 1].role == role
   else { fail("stale ref \(args[1])") }
   if args[2] == "TYPE_TEXT" {
     let text = stdinText()
-    if !setValue(els[n - 1], text) { typeText(text, pid: app.processIdentifier) }
-  } else { press(els[n - 1]) }
+    if !setValue(els[n - 1], text) { toApp(app) { typeText(text, pid: app.processIdentifier) } }
+  } else { press(app, win, els[n - 1]) }
   print("ok")
 case ("key", 2):
   let (app, _) = appRoot(args[0])
-  guard keyStroke(args[1], pid: app.processIdentifier) else { fail("unknown key in \(args[1])") }
+  var known = true
+  if !(sky(app) && shortcut(app, args[1])) { toApp(app) { known = keyStroke(args[1], pid: app.processIdentifier) } }
+  guard known else { fail("unknown key in \(args[1])") }
   print("pressed \(args[1])")
 case ("menu", 2): menu(args[0], args[1])
 default:
-  fail("usage: mac-ax dump|click|type|act|key|menu APP ... | apps | running APP | front | trusted [--prompt]")
+  fail("usage: mac-ax dump|click|type|act|key|menu|shot APP ... | apps | running APP | front | trusted [--prompt]")
 }

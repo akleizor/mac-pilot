@@ -20,7 +20,11 @@ done: 1 action(s) in 1.3s — {"app":"System Settings","window":"About"} (verify
 ## What it does
 
 - **Reads a window** as `@N` control references and its text (`dump`).
-- **Acts** by label or reference: `click`, `type`, `key`, `menu`, `open`.
+- **Acts** by label or reference: `click`, `type`, `key`, `menu`, `open`; a
+  canvas takes `click --at X,Y`, and `shot` captures the window even when covered.
+- **Works on Electron and Chromium apps** (TradingView, Lark, VS Code) in the
+  background, through the SkyLight recipe of
+  [open-computer-use](https://github.com/iFurySt/open-computer-use) (MIT).
 - **Refuses instead of guessing**: a reference whose control moved, a label that
   matches twice, a field the command would not act on.
 - **Runs a flow** (`flow "GOAL"`): each step reads the app and asks
