@@ -47,8 +47,11 @@ $M type --app "System Settings" Search "Night Shift"
   order: before a confirming click, check the `@N` sits on the row you mean.
 - **Nothing moves.** Presses, value sets and app-targeted keys leave the pointer,
   focus and front app alone. Exception: a menu item that opens a window can bring
-  its app forward (Finder "New Finder Window" did). To bring an app forward on
-  purpose use `open -a APP`.
+  its app forward (Finder "New Finder Window" did).
+- **Never take the user's front.** Do not activate, raise or `open -a` an app,
+  and do not use screenshot-and-click computer use on an app `mac` can reach:
+  every gesture here works with the app behind other windows. Bring an app
+  forward only when the user asks for it.
 - **Chromium and Electron apps** ignore AX presses and drop keys unless active.
   `mac` detects them (and any control inside a web area) and clicks the
   control's centre through SkyLight instead, marking the app active without
