@@ -152,9 +152,9 @@ func target(_ d: Dump, _ spec: String, kind: String, was: (String, String)?) -> 
   }
   let hits = pool.filter(match)
   if hits.count == 1 { return hits[0] }
-  if hits.isEmpty { fail("nothing matches \(spec) (screen changed?); run mac-ops dump") }
+  if hits.isEmpty { fail("nothing matches \(spec) (screen changed?); run mac dump") }
   let names = hits.prefix(6).map { "\"\($0.label)\" [\($0.role)]" }.joined(separator: ", ")
-  fail("\(spec) matches \(hits.count): \(names); run mac-ops dump and use its @N")
+  fail("\(spec) matches \(hits.count): \(names); run mac dump and use its @N")
 }
 
 // ---------- keyboard ----------
@@ -446,7 +446,8 @@ func shot(_ app: NSRunningApplication, _ win: AXUIElement, _ path: String) {
   else { fail("cannot write \(path)") }
   CGImageDestinationAddImage(dest, img, nil)
   guard CGImageDestinationFinalize(dest) else { fail("cannot write \(path)") }
-  print("saved \(img.width)x\(img.height) \(path)")
+  let w = frame(win)?.size ?? .zero
+  print("saved \(img.width)x\(img.height) \(path) (window \(Int(w.width))x\(Int(w.height)) points)")
 }
 
 // ---------- actions ----------
@@ -486,15 +487,18 @@ func menu(_ name: String, _ path: String) {
 // apps lists running apps that have a window, so a dialog's owner
 // (SecurityAgent, UserNotificationCenter, coreautha) can be found by name.
 func apps() {
-  var rows: [String] = []
-  for app in NSWorkspace.shared.runningApplications {
-    let el = AXUIElementCreateApplication(app.processIdentifier)
+  let all = NSWorkspace.shared.runningApplications
+  var rows = [String?](repeating: nil, count: all.count)
+  let lock = NSLock()
+  DispatchQueue.concurrentPerform(iterations: all.count) { i in // one slow app no longer adds to every other
+    let el = AXUIElementCreateApplication(all[i].processIdentifier)
     AXUIElementSetMessagingTimeout(el, 0.3) // one hung app must not stall the whole list
-    guard let wins = attr(el, "AXWindows") as? [AXUIElement], !wins.isEmpty else { continue }
+    guard let wins = attr(el, "AXWindows") as? [AXUIElement], !wins.isEmpty else { return }
     let titles = wins.prefix(3).map { clean(attr($0, "AXTitle")) }.joined(separator: " / ")
-    rows.append("\(app.localizedName ?? "-") | \(app.bundleIdentifier ?? "-") | \(titles)")
+    let row = "\(all[i].localizedName ?? "-") | \(all[i].bundleIdentifier ?? "-") | \(titles)"
+    lock.lock(); rows[i] = row; lock.unlock()
   }
-  print(rows.sorted().joined(separator: "\n"))
+  print(rows.compactMap { $0 }.sorted().joined(separator: "\n"))
 }
 
 // ---------- command line ----------
@@ -520,6 +524,7 @@ if cmd == "launch", !args.isEmpty { // launch APP [extra open arguments]
   // Most apps activate themselves when they open a window, `open -g` or not. Watch the front
   // every 10 ms and hand it straight back to the app the user was in.
   let before = NSWorkspace.shared.frontmostApplication
+  let old = Set(NSWorkspace.shared.runningApplications.map(\.processIdentifier))
   let p = Process()
   p.executableURL = URL(fileURLWithPath: "/usr/bin/open")
   p.arguments = ["-g", "-a", args[0]] + args.dropFirst()
@@ -527,20 +532,22 @@ if cmd == "launch", !args.isEmpty { // launch APP [extra open arguments]
   var up: Date?
   for _ in 0..<800 { // 8 s
     RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.01))
-    if let b = before, let f = NSWorkspace.shared.frontmostApplication, f != b, f.localizedName == args[0] || f.bundleIdentifier == args[0] {
+    // any change of front in these 1.5 s is the launch (`open -a "Visual Studio Code"` runs as "Code")
+    if let b = before, let f = NSWorkspace.shared.frontmostApplication, f != b {
       b.activate()
       if NSWorkspace.shared.frontmostApplication != b, let id = b.bundleIdentifier { // activate() often fails from a background process
         Process.launchedProcess(launchPath: "/usr/bin/open", arguments: ["-b", id]).waitUntilExit()
       }
     }
-    if up == nil, let a = findApp(args[0]), let w = attr(AXUIElementCreateApplication(a.processIdentifier), "AXWindows") as? [AXUIElement], !w.isEmpty { up = Date() }
+    let launched = NSWorkspace.shared.runningApplications.filter { $0.localizedName == args[0] || $0.bundleIdentifier == args[0] || !old.contains($0.processIdentifier) }
+    if up == nil, launched.contains(where: { !((attr(AXUIElementCreateApplication($0.processIdentifier), "AXWindows") as? [AXUIElement]) ?? []).isEmpty }) { up = Date() }
     if let u = up, Date().timeIntervalSince(u) > 1.5 { break } // apps take the front a moment after their first window
   }
   print(up == nil ? "down" : "up"); exit(0)
 }
 if cmd == "front" { print(NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? ""); exit(0) }
 if !AXIsProcessTrusted() {
-  fail("Accessibility is not granted to the app running mac-ops; run mac-ops setup")
+  fail("Accessibility is not granted to the app running mac; run mac setup")
 }
 let was = take("--was", count: 2).map { ($0[0], $0[1]) }
 func pt(_ v: [String]?) -> CGPoint? {
