@@ -82,9 +82,15 @@ func window(_ root: AXUIElement) -> AXUIElement? {
     ?? (attr(root, "AXWindows") as? [AXUIElement])?.first
 }
 
-func read(_ name: String) -> (NSRunningApplication, Dump, [AXUIElement], AXUIElement) {
+// windows: the focused or main window first, then the app's other windows (a prompt or panel)
+func windows(_ root: AXUIElement) -> [AXUIElement] {
+  guard let first = window(root) else { return [] }
+  return [first] + ((attr(root, "AXWindows") as? [AXUIElement]) ?? []).filter { !CFEqual($0, first) }
+}
+
+func read(_ name: String, window pick: AXUIElement? = nil) -> (NSRunningApplication, Dump, [AXUIElement], AXUIElement) {
   let (app, root) = appRoot(name)
-  guard let win = window(root) else { fail("\(app.localizedName ?? name) has no window") }
+  guard let win = pick ?? window(root) else { fail("\(app.localizedName ?? name) has no window") }
   var waitForWeb = false
   if sky(app) {
     if let wid = windowID(win) { keepAwake(wid) }
@@ -137,24 +143,44 @@ func read(_ name: String) -> (NSRunningApplication, Dump, [AXUIElement], AXUIEle
 // or the @N of the last dump, given as the label and role it had then (`was`),
 // against this fresh read: gone or ambiguous is refused, never guessed.
 func target(_ d: Dump, _ spec: String, kind: String, was: (String, String)?) -> Item {
+  switch find(d, spec, kind: kind, was: was) { case .success(let it): return it; case .failure(let e): fail(e.msg) }
+}
+struct Miss: Error { let msg: String }
+
+// resolve finds a label in the main window, then in the app's other windows (a prompt such
+// as 1Password's "Access Requested" is its own window); an @N names the main window only.
+func resolve(_ name: String, _ spec: String, kind: String) -> (NSRunningApplication, Dump, [AXUIElement], AXUIElement, Item) {
+  var first: Miss?
+  let (_, root) = appRoot(name)
+  for (i, w) in windows(root).enumerated() where i == 0 || was == nil {
+    let (app, d, els, win) = read(name, window: w)
+    switch find(d, spec, kind: kind, was: was) {
+    case .success(let it): return (app, d, els, win, it)
+    case .failure(let e): if first == nil { first = e }
+    }
+  }
+  fail(first?.msg ?? "\(name) has no window")
+}
+
+func find(_ d: Dump, _ spec: String, kind: String, was: (String, String)?) -> Result<Item, Miss> {
   let match: (Item) -> Bool
   var pool = d.items
   if let (label, role) = was { // @N is its own slot: matching label + role alone failed when three buttons shared a label
     guard let n = Int(spec.dropFirst()), n >= 1, n <= d.items.count, d.items[n - 1].label == label, d.items[n - 1].role == role
-    else { fail("\(spec) no longer names \"\(label)\" [\(role)] (screen changed?); run mac dump") }
-    return d.items[n - 1]
+    else { return .failure(Miss(msg: "\(spec) no longer names \"\(label)\" [\(role)] (screen changed?); run mac dump")) }
+    return .success(d.items[n - 1])
   } else {
     pool = pool.filter { $0.kind == kind }
     let exact = pool.filter { $0.label == spec }
-    if exact.count == 1 { return exact[0] }
+    if exact.count == 1 { return .success(exact[0]) }
     let low = spec.lowercased()
     match = exact.count > 1 ? { $0.label == spec } : { $0.label.lowercased().contains(low) }
   }
   let hits = pool.filter(match)
-  if hits.count == 1 { return hits[0] }
-  if hits.isEmpty { fail("nothing matches \(spec) (screen changed?); run mac dump") }
+  if hits.count == 1 { return .success(hits[0]) }
+  if hits.isEmpty { return .failure(Miss(msg: "nothing matches \(spec) (screen changed?); run mac dump")) }
   let names = hits.prefix(6).map { "\"\($0.label)\" [\($0.role)]" }.joined(separator: ", ")
-  fail("\(spec) matches \(hits.count): \(names); run mac dump and use its @N")
+  return .failure(Miss(msg: "\(spec) matches \(hits.count): \(names); run mac dump and use its @N"))
 }
 
 // ---------- keyboard ----------
@@ -564,8 +590,7 @@ let gesture: Gesture = right ? .right : double ? .double : .click
 
 // centre resolves a target (label or @N) to its window-local centre point.
 func centre(_ app: String, _ spec: String, kind: String) -> (NSRunningApplication, AXUIElement, CGPoint, Item) {
-  let (a, d, els, win) = read(app)
-  let it = target(d, spec, kind: kind, was: spec.hasPrefix("@") ? was : nil)
+  let (a, _, els, win, it) = resolve(app, spec, kind: kind)
   guard let f = frame(els[Int(it.ref)! - 1]), let wf = frame(win) else { fail("\(spec) has no frame (screen locked?)") }
   return (a, win, CGPoint(x: f.midX - wf.minX, y: f.midY - wf.minY), it)
 }
@@ -629,13 +654,11 @@ case ("shot", 2):
   guard let win = window(root) else { fail("\(args[0]) has no window") }
   shot(app, win, args[1])
 case ("click", 2):
-  let (app, d, els, win) = read(args[0])
-  let it = target(d, args[1], kind: "CLICK", was: was)
+  let (app, _, els, win, it) = resolve(args[0], args[1], kind: "CLICK")
   press(app, win, els[Int(it.ref)! - 1])
   print("clicked \(it.role) \"\(it.label)\"")
 case ("type", 2): // the text arrives on stdin, never on a command line
-  let (app, d, els, _) = read(args[0])
-  let it = target(d, args[1], kind: "TYPE_TEXT", was: was)
+  let (app, _, els, _, it) = resolve(args[0], args[1], kind: "TYPE_TEXT")
   let el = els[Int(it.ref)! - 1], text = stdinText()
   if keys {
     // Apple's sign-in sheets are drawn by another process and ignore an AX value and
