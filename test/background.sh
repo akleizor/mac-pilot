@@ -16,6 +16,7 @@ before=$(front)
 "$D" launch "$A" -n --args --user-data-dir="$T" --no-first-run --no-default-browser-check \
   --window-position=200,150 --window-size=700,600 "file://$PWD/test/fixture.html" >/dev/null
 for _ in $(seq 20); do "$M" dump --app "$A" 2>/dev/null | grep -q '"field"' && break; sleep 0.25; done
+[ "$(front)" = "$before" ] || echo "FAIL launch took the front: $(front), was $before"
 fails=0
 check() { # check WANT CMD...: run a gesture, then the page title must end with WANT
   local want=$1; shift
@@ -23,6 +24,7 @@ check() { # check WANT CMD...: run a gesture, then the page title must end with 
   "$M" "$@" --app "$A" >/dev/null || { echo "FAIL $*: command failed"; fails=$((fails+1)); return; }
   local ms=$(perl -MTime::HiRes=time -e "print int((time-$t0)*1000)") title=""
   for _ in 1 2 3 4 5 6; do sleep 0.15; title=$("$M" dump --app "$A" | head -1); [[ "$title" == *$want" - Google Chrome\"" ]] && break; done
+  [ "$(front)" = "$before" ] || echo "FAIL $* took the front: $(front)"
   if [[ "$title" == *$want" - Google Chrome\"" ]]; then echo "ok   $* (${ms} ms)"; else echo "FAIL $*: title $title, want …$want"; fails=$((fails+1)); fi
 }
 check click click --at 200,250
