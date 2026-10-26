@@ -93,7 +93,7 @@ func read(_ name: String, window pick: AXUIElement? = nil) -> (NSRunningApplicat
   guard let win = pick ?? window(root) else { fail("\(app.localizedName ?? name) has no window") }
   var waitForWeb = false
   if sky(app) {
-    if let wid = windowID(win) { keepAwake(wid) }
+    keepAwake(win)
     waitForWeb = enableWeb(root)
   }
   var items: [Item] = [], els: [AXUIElement] = [], context: [String] = [], seen = 0, web = false
@@ -306,11 +306,43 @@ func frame(_ el: AXUIElement) -> CGRect? {
 // keepAwake: once macOS marks a Chromium window hidden (covered, or on another Desktop) the
 // page stops taking input and drops out of the AX tree. Turning off its occlusion
 // notifications while it is visible pins it awake from then on; done while it is hidden it
-// would pin it asleep, so it runs only when part of the window is uncovered.
-func keepAwake(_ wid: CGWindowID) {
-  guard let slConnection, let slOcclusion, visible(wid) else { return }
-  var prev: UInt8 = 0
-  _ = slOcclusion(slConnection(), wid, 0, &prev)
+// would pin it asleep. A window covered on this Desktop is moved, never raised, until a corner
+// shows, pinned, and moved back: a sliver of it shows for a moment.
+func keepAwake(_ win: AXUIElement) {
+  guard let wid = windowID(win), let slConnection, let slOcclusion else { return }
+  let mark = FileManager.default.temporaryDirectory.appendingPathComponent("mac-awake-\(wid)").path // window ids reset on reboot, as does this folder
+  if FileManager.default.fileExists(atPath: mark) { return }
+  let pin = { var prev: UInt8 = 0; _ = slOcclusion(slConnection(), wid, 0, &prev); FileManager.default.createFile(atPath: mark, contents: nil) }
+  if visible(wid) { return pin() }
+  guard onDesktop(wid), let home = frame(win), let corner = uncovered(wid) else { return }
+  let move = { (p: CGPoint) in var q = p; if let v = AXValueCreate(.cgPoint, &q) { AXUIElementSetAttributeValue(win, "AXPosition" as CFString, v) } }
+  move(corner)
+  for _ in 0..<50 where !visible(wid) { usleep(10_000) }
+  if visible(wid) { usleep(150_000); pin() } // Chromium wakes a beat after macOS reports it visible
+  move(home.origin)
+}
+
+func onDesktop(_ wid: CGWindowID) -> Bool {
+  ((CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID) as? [[String: Any]]) ?? [])
+    .contains { ($0[kCGWindowNumber as String] as? NSNumber)?.uint32Value == wid }
+}
+
+// uncovered: a screen point whose 80x80 square below and right is under no window above wid
+func uncovered(_ wid: CGWindowID) -> CGPoint? {
+  let above = ((CGWindowListCopyWindowInfo(.optionOnScreenAboveWindow, wid) as? [[String: Any]]) ?? [])
+    .filter { (($0[kCGWindowAlpha as String] as? NSNumber)?.doubleValue ?? 1) > 0 }
+    .compactMap { ($0[kCGWindowBounds as String] as? NSDictionary).flatMap { CGRect(dictionaryRepresentation: $0 as CFDictionary) } }
+  let mainH = NSScreen.screens.first?.frame.height ?? 0
+  for s in NSScreen.screens {
+    let f = s.visibleFrame, top = mainH - f.maxY // AppKit's bottom-left origin to CG's top-left
+    for y in stride(from: top, to: top + f.height - 80, by: 40) {
+      for x in stride(from: f.minX, to: f.maxX - 80, by: 40) {
+        let pts = [0, 40, 79].flatMap { dx in [0, 40, 79].map { dy in CGPoint(x: x + CGFloat(dx), y: y + CGFloat(dy)) } }
+        if !pts.contains(where: { p in above.contains { $0.contains(p) } }) { return CGPoint(x: x, y: y) }
+      }
+    }
+  }
+  return nil
 }
 
 // visible: the window is on this Desktop and some of a 5x5 grid of its points is not under another window
@@ -605,6 +637,7 @@ func centre(_ app: String, _ spec: String, kind: String) -> (NSRunningApplicatio
 func appWindow(_ app: String) -> (NSRunningApplication, AXUIElement) {
   let (a, root) = appRoot(app)
   guard let win = window(root) else { fail("\(app) has no window") }
+  if sky(a) { keepAwake(win) }
   return (a, win)
 }
 let keys = args.contains("--keys")

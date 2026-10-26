@@ -108,6 +108,10 @@ native apps (System Settings). Check each one on your machine before relying on 
 - Pin a window awake only while some of it is actually uncovered:
   `kCGWindowIsOnscreen` stays true for a covered window, and pinning then keeps the
   page asleep for good.
+- A window covered from launch never gets a "visible" notice, so it never wakes, and
+  turning notifications back on does not wake it either (tested 2026-10-27). Moving it
+  with `AXPosition` (no raise) until an 80x80 corner is uncovered, pinning, and moving
+  it back wakes it; a sliver shows for about 0.2 s.
 - Apps take the front when their first window opens, even with `open -g` or
   `NSWorkspace.OpenConfiguration.activates = false` and `hides = true`. The only remedy
   is to watch the front and hand it back at once.
