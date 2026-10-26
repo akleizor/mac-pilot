@@ -258,8 +258,10 @@ let axWindowID = sym(APPSVC, "_AXUIElementGetWindow", (@convention(c) (AXUIEleme
 func sky(_ app: NSRunningApplication) -> Bool {
   guard let dir = app.bundleURL?.appendingPathComponent("Contents/Frameworks").path,
         let names = try? FileManager.default.contentsOfDirectory(atPath: dir) else { return false }
-  return names.contains { $0.hasPrefix("Electron Framework") || $0.hasPrefix("Chromium Embedded Framework")
-    || ($0.hasSuffix(" Framework.framework") && ($0.contains("Chrome") || $0.contains("Chromium"))) }
+  // a Chromium renderer helper marks it whatever the framework is called (Dia and Arc ship "ArcCore")
+  let renderer = { (d: String) in ((try? FileManager.default.contentsOfDirectory(atPath: d)) ?? []).contains { $0.hasSuffix(" (Renderer).app") } }
+  return renderer(dir) || names.contains { $0.hasPrefix("Electron Framework") || $0.hasPrefix("Chromium Embedded Framework")
+    || ($0.hasSuffix(" Framework.framework") && ($0.contains("Chrome") || $0.contains("Chromium"))) || renderer("\(dir)/\($0)/Helpers") }
 }
 
 // inWeb: the control sits in a web area, where an AX press is often ignored
@@ -370,7 +372,7 @@ enum Gesture { case click, double, right, drag(to: CGPoint), scroll(dy: Int32, d
 // moved(target), a primer down/up at (-1,-1), then the gesture, every event stamped with
 // the window (SLEventSetIntegerValueField) and posted through SkyLight and the public path.
 // Waits are open-computer-use's calibrated ones (delay scale 0.2): zero waits drop clicks.
-func skyMouse(_ app: NSRunningApplication, _ win: AXUIElement, at local: CGPoint, _ g: Gesture) {
+func skyMouse(_ app: NSRunningApplication, _ win: AXUIElement, at local: CGPoint, _ g: Gesture, mods: CGEventFlags = []) {
   guard let wid = windowID(win), let wf = frame(win) else { fail("no window frame (screen locked?)") }
   var ends = [local]
   if case .drag(let to) = g { ends.append(to) }
@@ -420,6 +422,7 @@ func skyMouse(_ app: NSRunningApplication, _ win: AXUIElement, at local: CGPoint
         e.setDoubleValueField(.mouseEventDeltaX, value: Double(dx)); e.setDoubleValueField(.mouseEventDeltaY, value: Double(dy))
       }
       prev = w
+      if w != primer { e.flags = mods } // cmd-click, shift-drag and the like
       stamp(e, w, clicks, phase, right ? 1 : 0)
       usleep(wait)
     }
@@ -587,6 +590,11 @@ let lines = take("--lines").flatMap { Int32($0[0]) } ?? 5
 let right = args.contains("--right"), double = args.contains("--double")
 args.removeAll { $0 == "--right" || $0 == "--double" }
 let gesture: Gesture = right ? .right : double ? .double : .click
+var mods = CGEventFlags() // --mods cmd+shift on click and drag
+for m in (take("--mods")?[0] ?? "").lowercased().split(separator: "+") {
+  guard let f = MODS[String(m)] else { fail("unknown modifier \(m)") }
+  mods.insert(f)
+}
 
 // centre resolves a target (label or @N) to its window-local centre point.
 func centre(_ app: String, _ spec: String, kind: String) -> (NSRunningApplication, AXUIElement, CGPoint, Item) {
@@ -610,16 +618,16 @@ case ("dump", 1):
 case ("click", 1): // canvases (charts, maps) have no controls: a window-local point, then confirm with shot
   guard let at else { fail("click needs a target, or --at X,Y (window-local points)") }
   let (app, win) = appWindow(args[0])
-  skyMouse(app, win, at: at, gesture)
+  skyMouse(app, win, at: at, gesture, mods: mods)
   print("\(right ? "right-" : double ? "double-" : "")clicked at \(Int(at.x)),\(Int(at.y))")
-case ("click", 2) where right || double: // AX has no right or double press: the gesture at the control's centre
+case ("click", 2) where right || double || !mods.isEmpty: // AX has no right, double or modified press: the gesture at the control's centre
   let (app, win, p, it) = centre(args[0], args[1], kind: "CLICK")
-  skyMouse(app, win, at: p, gesture)
-  print("\(right ? "right-" : "double-")clicked \(it.role) \"\(it.label)\"")
+  skyMouse(app, win, at: p, gesture, mods: mods)
+  print("\(right ? "right-" : double ? "double-" : "")clicked \(it.role) \"\(it.label)\"")
 case ("drag", 1):
   guard let at, let to else { fail("drag needs --at X,Y --to X,Y (window-local points)") }
   let (app, win) = appWindow(args[0])
-  skyMouse(app, win, at: at, .drag(to: to))
+  skyMouse(app, win, at: at, .drag(to: to), mods: mods)
   print("dragged \(Int(at.x)),\(Int(at.y)) to \(Int(to.x)),\(Int(to.y))")
 case ("scroll", 2), ("scroll", 3): // scroll APP up|down|left|right [TARGET], --lines N (default 5)
   let dir = args[1]

@@ -16,7 +16,7 @@ before=$(front)
 "$D" launch "$A" -n --args --user-data-dir="$T" --no-first-run --no-default-browser-check \
   --window-position=200,150 --window-size=700,600 "file://$PWD/test/fixture.html" >/dev/null
 for _ in $(seq 20); do "$M" dump --app "$A" 2>/dev/null | grep -q '"field"' && break; sleep 0.25; done
-[ "$(front)" = "$before" ] || echo "FAIL launch took the front: $(front), was $before"
+[ "$(front)" = com.google.Chrome ] && echo "FAIL launch took the front"
 fails=0
 check() { # check WANT CMD...: run a gesture, then the page title must end with WANT
   local want=$1; shift
@@ -24,10 +24,11 @@ check() { # check WANT CMD...: run a gesture, then the page title must end with 
   "$M" "$@" --app "$A" >/dev/null || { echo "FAIL $*: command failed"; fails=$((fails+1)); return; }
   local ms=$(perl -MTime::HiRes=time -e "print int((time-$t0)*1000)") title=""
   for _ in 1 2 3 4 5 6; do sleep 0.15; title=$("$M" dump --app "$A" | head -1); [[ "$title" == *$want" - Google Chrome\"" ]] && break; done
-  [ "$(front)" = "$before" ] || echo "FAIL $* took the front: $(front)"
+  [ "$(front)" = com.google.Chrome ] && { echo "FAIL $* took the front"; fails=$((fails+1)); } # someone at the Mac switching apps is not a failure
   if [[ "$title" == *$want" - Google Chrome\"" ]]; then echo "ok   $* (${ms} ms)"; else echo "FAIL $*: title $title, want …$want"; fails=$((fails+1)); fi
 }
 check click click --at 200,250
+check "click+cmd+shift" click --at 210,250 --mods cmd+shift
 check dbl click --at 200,250 --double
 check right click --at 200,250 --right
 check "drag200 click" drag --at 100,200 --to 300,260
@@ -35,6 +36,7 @@ check "y[1-9]*" scroll down --lines 10
 check "y0" scroll up --lines 30
 check "val=hello" type field hello
 check key:Escape key escape
-[ "$(front)" = "$before" ] && echo "ok   front app unchanged ($before)" || { echo "FAIL front app is now $(front), was $before"; fails=$((fails+1)); }
-osascript -e "quit app \"$A\"" >/dev/null; rm -rf "$T"
+[ "$(front)" != com.google.Chrome ] && echo "ok   Chrome never came to the front" || { echo "FAIL Chrome is in front"; fails=$((fails+1)); }
+osascript -e "quit app \"$A\"" >/dev/null
+for _ in $(seq 40); do pgrep -f -- "--user-data-dir=$T" >/dev/null || break; sleep 0.25; done; rm -rf "$T"
 echo "$fails failed"; exit $((fails > 0))
