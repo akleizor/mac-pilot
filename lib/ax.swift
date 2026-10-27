@@ -314,7 +314,10 @@ func keepAwake(_ win: AXUIElement) {
   if FileManager.default.fileExists(atPath: mark) { return }
   let pin = { var prev: UInt8 = 0; _ = slOcclusion(slConnection(), wid, 0, &prev); FileManager.default.createFile(atPath: mark, contents: nil) }
   if visible(wid) { return pin() }
-  guard onDesktop(wid), let home = frame(win), let corner = uncovered(wid) else { return }
+  // one move per window: if it does not wake, later calls leave it put instead of flickering it each time
+  let tried = mark + ".tried"
+  guard !FileManager.default.fileExists(atPath: tried), onDesktop(wid), let home = frame(win), let corner = uncovered(wid) else { return }
+  FileManager.default.createFile(atPath: tried, contents: nil)
   let move = { (p: CGPoint) in var q = p; if let v = AXValueCreate(.cgPoint, &q) { AXUIElementSetAttributeValue(win, "AXPosition" as CFString, v) } }
   move(corner)
   for _ in 0..<50 where !visible(wid) { usleep(10_000) }
