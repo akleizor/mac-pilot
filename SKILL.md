@@ -21,7 +21,7 @@ machine's own notes.
 | `key <combo>` | `return`, `escape`, `tab`, `cmd+a`, `cmd+shift+n` … sent to that app |
 | `menu "File > New"` | Choose a menu-bar item |
 | `shot FILE.png` | Screenshot the window, even covered or on another Desktop (Screen Recording) |
-| `record FILE.mov` | Video of the window's screen area in the background (`--seconds N`, default 30); keep it uncovered |
+| `record FILE.mov` | Video of the window, even covered, in the background (`--seconds N`, default 30) |
 | `open` · `apps` | Launch in the background · list apps with a window |
 | `plan FILE` | A JSON plan: deterministic steps, checked postconditions, one bounded recovery |
 | `flow "GOAL"` | For runs with no agent watching: a decision model picks each step (2–4 s) |
@@ -67,6 +67,19 @@ runs any script in the tab (the last expression is printed; promises are not
 awaited); open a page with `js 'location.href="…"'`. `--url PART` picks a tab.
 A browser that blocks JavaScript gets the Accessibility path instead, slower.
 
+Work in your own window of the user's browser: `tab URL` makes it once (the
+browser brings it forward for a moment, then the front goes straight back) and later
+calls change its page. Every command then aims at that window, so the user keeps
+using their own windows and tabs. Least to most noticeable, prefer the first that works:
+
+1. Page JavaScript in your window (`dump`, `click`, `type`, `js`, `tab` after the
+   first): nothing on screen changes. `shot` and `record` also show nothing.
+2. Mouse and key gestures (`click --real`, `click --at`, `drag`, `type --keys`): the
+   window is not raised, but the browser is made active for a moment.
+3. The first command on a fully covered Chromium window moves it until a corner
+   shows, then back (about 0.2 s, once per window).
+4. Making the window (the first `tab`): it comes forward for a moment.
+
 Speed comes from chaining: write the whole task as one shell call (`&&`), checks
 included, or as one `js` script. On the web, `flow` with Jev was slower (about
 2 s per decision) and picked wrong steps, so you choose the steps.
@@ -90,7 +103,7 @@ native file pickers and drag and drop. Those gestures arrive as real input. A
 CAPTCHA or a "verify you are human" check goes to the user, never a solver.
 
 ```bash
-$M tabs --app "Google Chrome"
+$M tab https://example.com --app "Google Chrome" && $M dump --app "Google Chrome"
 $M dump --app "Google Chrome" && $M type --app "Google Chrome" "Search" "Lantau Island" && $M key return --app "Google Chrome" && $M dump --app "Google Chrome"
 $M js --app "Google Chrome" --url docs.google.com 'document.title'
 echo 'document.querySelector("#q").value="x"; document.forms[0].submit()' | $M js --app "Google Chrome"

@@ -6,6 +6,7 @@
 import AppKit
 import ApplicationServices
 import ImageIO
+import ScreenCaptureKit
 
 let KIND: [String: String] = [
   "AXButton": "CLICK", "AXCheckBox": "CLICK", "AXRadioButton": "CLICK", "AXPopUpButton": "CLICK",
@@ -76,9 +77,18 @@ func appRoot(_ name: String) -> (NSRunningApplication, AXUIElement) {
   return (app, root)
 }
 
-// dialogs such as SecurityAgent's password prompt have no focused or main window
+// dialogs such as SecurityAgent's password prompt have no focused or main window.
+// MAC_WINDOW=x,y,w,h picks the window with that frame instead (the agent's own browser window).
 func window(_ root: AXUIElement) -> AXUIElement? {
-  element(attr(root, "AXFocusedWindow")) ?? element(attr(root, "AXMainWindow"))
+  if let want = ProcessInfo.processInfo.environment["MAC_WINDOW"] {
+    let n = want.split(separator: ",").compactMap { Double($0) }
+    guard n.count == 4 else { fail("MAC_WINDOW is not x,y,w,h") }
+    return ((attr(root, "AXWindows") as? [AXUIElement]) ?? []).first { w in
+      guard let f = frame(w) else { return false }
+      return abs(f.minX - n[0]) < 3 && abs(f.minY - n[1]) < 3 && abs(f.width - n[2]) < 3 && abs(f.height - n[3]) < 3
+    }
+  }
+  return element(attr(root, "AXFocusedWindow")) ?? element(attr(root, "AXMainWindow"))
     ?? (attr(root, "AXWindows") as? [AXUIElement])?.first
 }
 
@@ -474,6 +484,41 @@ func skyMouse(_ app: NSRunningApplication, _ win: AXUIElement, at local: CGPoint
   }
 }
 
+// record captures one window's own pixels to a movie, so other windows on top do not
+// show; the window must be on screen (this Desktop), as macOS composites nothing else.
+final class Done: NSObject, SCRecordingOutputDelegate {
+  let sem = DispatchSemaphore(value: 0); var error: Error?
+  func recordingOutputDidFinishRecording(_ o: SCRecordingOutput) { sem.signal() }
+  func recordingOutput(_ o: SCRecordingOutput, didFailWithError e: Error) { error = e; sem.signal() }
+}
+func record(_ wid: CGWindowID, _ url: URL, _ secs: Double) {
+  let started = DispatchSemaphore(value: 0), done = Done()
+  var failure: String?, stream: SCStream?
+  Task {
+    do {
+      let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
+      guard let w = content.windows.first(where: { $0.windowID == wid }) else { failure = "the window is not shareable"; started.signal(); return }
+      let cfg = SCStreamConfiguration()
+      let scale = NSScreen.main?.backingScaleFactor ?? 2
+      cfg.width = Int(w.frame.width * scale); cfg.height = Int(w.frame.height * scale)
+      cfg.minimumFrameInterval = CMTime(value: 1, timescale: 30); cfg.showsCursor = false
+      let s = SCStream(filter: SCContentFilter(desktopIndependentWindow: w), configuration: cfg, delegate: nil)
+      let rc = SCRecordingOutputConfiguration(); rc.outputURL = url; rc.outputFileType = .mov
+      try s.addRecordingOutput(SCRecordingOutput(configuration: rc, delegate: done))
+      try await s.startCapture()
+      stream = s
+    } catch { failure = "\(error.localizedDescription) (Screen Recording permission?)" }
+    started.signal()
+  }
+  started.wait()
+  if let failure { fail(failure) }
+  Thread.sleep(forTimeInterval: secs)
+  Task { try? await stream?.stopCapture() }
+  if done.sem.wait(timeout: .now() + 10) == .timedOut { fail("the recording did not finish") }
+  if let e = done.error { fail(e.localizedDescription) }
+  print("recorded \(Int(secs)) s to \(url.path)")
+}
+
 // toApp delivers app-targeted keys; a Chromium app drops them unless its window is active and key.
 func toApp(_ app: NSRunningApplication, _ body: () -> Void) {
   guard sky(app) else { return body() }
@@ -614,6 +659,26 @@ if cmd == "launch", !args.isEmpty { // launch APP [extra open arguments]
   }
   print(up == nil ? "down" : "up"); exit(0)
 }
+if cmd == "behind", !args.isEmpty { // behind CMD ARGS: run it, and hand back the front if it takes it
+  let before = NSWorkspace.shared.frontmostApplication
+  let p = Process(), out = Pipe()
+  p.executableURL = URL(fileURLWithPath: args[0]); p.arguments = Array(args.dropFirst()); p.standardOutput = out
+  do { try p.run() } catch { fail("cannot run \(args[0])") }
+  var ended: Date?
+  for _ in 0..<1000 { // 10 s
+    RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.01))
+    if let b = before, let f = NSWorkspace.shared.frontmostApplication, f != b {
+      b.activate()
+      if NSWorkspace.shared.frontmostApplication != b, let id = b.bundleIdentifier {
+        Process.launchedProcess(launchPath: "/usr/bin/open", arguments: ["-b", id]).waitUntilExit()
+      }
+    }
+    if ended == nil, !p.isRunning { ended = Date() }
+    if let e = ended, Date().timeIntervalSince(e) > 1 { break } // an app takes the front a moment after its window opens
+  }
+  FileHandle.standardOutput.write(out.fileHandleForReading.readDataToEndOfFile())
+  exit(p.isRunning ? 1 : p.terminationStatus)
+}
 if cmd == "awake", args.count == 1 { // keep a covered Chromium window running at full speed (see keepAwake)
   let (app, root) = appRoot(args[0])
   if sky(app), let win = window(root) { keepAwake(win) }
@@ -703,10 +768,10 @@ case ("scroll", 2), ("scroll", 3): // scroll APP up|down|left|right [TARGET], --
   let n = dir == "up" || dir == "left" ? lines : -lines
   skyMouse(app, win, at: p, dir == "up" || dir == "down" ? .scroll(dy: n, dx: 0) : .scroll(dy: 0, dx: n))
   print("scrolled \(dir) \(lines) lines at \(Int(p.x)),\(Int(p.y))")
-case ("frame", 1): // the window's screen rect, x,y,w,h
+case ("record", 3): // record APP FILE.mov SECONDS: one window, even covered (ScreenCaptureKit)
   let (_, win) = appWindow(args[0])
-  guard let f = frame(win) else { fail("no window frame (screen locked?)") }
-  print("\(Int(f.minX)),\(Int(f.minY)),\(Int(f.width)),\(Int(f.height))")
+  guard let wid = windowID(win), let secs = Double(args[2]) else { fail("record APP FILE.mov SECONDS") }
+  record(wid, URL(fileURLWithPath: args[1]), secs)
 case ("shot", 2):
   let (app, root) = appRoot(args[0])
   guard let win = window(root) else { fail("\(args[0]) has no window") }
