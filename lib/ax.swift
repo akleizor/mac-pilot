@@ -330,11 +330,17 @@ func onDesktop(_ wid: CGWindowID) -> Bool {
     .contains { ($0[kCGWindowNumber as String] as? NSNumber)?.uint32Value == wid }
 }
 
+// coverers: frames of app windows and panels above wid. The Dock, menu bar and sidebar utilities
+// sit at layer 20+ with full-screen, mostly transparent windows that hide nothing.
+func coverers(_ wid: CGWindowID) -> [CGRect] {
+  ((CGWindowListCopyWindowInfo(.optionOnScreenAboveWindow, wid) as? [[String: Any]]) ?? [])
+    .filter { (($0[kCGWindowAlpha as String] as? NSNumber)?.doubleValue ?? 1) > 0 && (($0[kCGWindowLayer as String] as? NSNumber)?.intValue ?? 0) < 20 }
+    .compactMap { ($0[kCGWindowBounds as String] as? NSDictionary).flatMap { CGRect(dictionaryRepresentation: $0 as CFDictionary) } }
+}
+
 // uncovered: a screen point whose 80x80 square below and right is under no window above wid
 func uncovered(_ wid: CGWindowID) -> CGPoint? {
-  let above = ((CGWindowListCopyWindowInfo(.optionOnScreenAboveWindow, wid) as? [[String: Any]]) ?? [])
-    .filter { (($0[kCGWindowAlpha as String] as? NSNumber)?.doubleValue ?? 1) > 0 }
-    .compactMap { ($0[kCGWindowBounds as String] as? NSDictionary).flatMap { CGRect(dictionaryRepresentation: $0 as CFDictionary) } }
+  let above = coverers(wid)
   let mainH = NSScreen.screens.first?.frame.height ?? 0
   for s in NSScreen.screens {
     let f = s.visibleFrame, top = mainH - f.maxY // AppKit's bottom-left origin to CG's top-left
@@ -355,8 +361,7 @@ func visible(_ wid: CGWindowID) -> Bool {
   guard let onScreen = CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID) as? [[String: Any]],
         let me = onScreen.first(where: { ($0[kCGWindowNumber as String] as? NSNumber)?.uint32Value == wid }),
         let r = rect(me) else { return false }
-  let above = ((CGWindowListCopyWindowInfo(.optionOnScreenAboveWindow, wid) as? [[String: Any]]) ?? [])
-    .filter { (($0[kCGWindowAlpha as String] as? NSNumber)?.doubleValue ?? 1) > 0 }.compactMap(rect)
+  let above = coverers(wid)
   for i in 0..<5 { for j in 0..<5 {
     let p = CGPoint(x: r.minX + r.width * (CGFloat(i) + 0.5) / 5, y: r.minY + r.height * (CGFloat(j) + 0.5) / 5)
     if !above.contains(where: { $0.contains(p) }) { return true }
