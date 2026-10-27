@@ -25,6 +25,8 @@ machine's own notes.
 | `plan FILE` | A JSON plan: deterministic steps, checked postconditions, one bounded recovery |
 | `flow "GOAL"` | For runs with no agent watching: a decision model picks each step (2–4 s) |
 | `setup` | Build the driver, ask for Accessibility once, check the decision model |
+| `js [--url PART] CODE` | Browsers: run JavaScript in the front tab or the first tab whose URL has PART |
+| `tabs` | Browsers: every tab's title and URL |
 
 ```bash
 $M dump --app "System Settings" && $M click --app "System Settings" Bluetooth
@@ -51,6 +53,24 @@ $M shot --app TradingView /tmp/tv.png && $M drag --app TradingView --at 620,410 
 - **Never send, buy, sell, delete or sign out** unless asked for that exact action;
   test orders on demo or paper accounts. Stop after about 3 failed tries of one
   approach and report.
+
+## Browsers
+
+For a web page in Chrome, Edge or Brave, use `js` before `dump`/`click`: one call
+(about 0.2 s) reads or changes the page in the user's own signed-in profile, in
+any tab, hidden or not, with no window shown, no extension and no CDP. Do several
+steps in one script; the last expression is printed (`JSON.stringify` objects;
+promises are not awaited). The browser needs View > Developer > Allow JavaScript
+from Apple Events, turned on once by the user (Chrome greys it out from the
+background); `js` says so when it is off. Dia allows it only with a launch flag.
+Use AX gestures for what a page script cannot do: native file pickers and real
+drag and drop.
+
+```bash
+$M tabs --app "Google Chrome"
+$M js --app "Google Chrome" --url docs.google.com 'document.title'
+echo 'document.querySelector("#q").value="x"; document.forms[0].submit()' | $M js --app "Google Chrome"
+```
 
 ## Targets and apps
 
