@@ -23,7 +23,7 @@ done: 1 action(s) in 1.3s — {"app":"System Settings","window":"About"} (verify
   drag, scroll, type, press keys and shortcuts, choose menus, screenshot one
   window: your pointer, keyboard focus and front app never move, so you keep
   working while an agent drives another window. `test/background.sh` checks each
-  gesture against a covered Chrome window.
+  gesture against a covered Chrome window; `test/web.sh` checks the web path (page JavaScript).
 - **Any app.** Native AppKit apps take accessibility presses; Electron and
   Chromium apps (TradingView, Lark, VS Code, Discord, Chrome) get stamped SkyLight
   events, the recipe of

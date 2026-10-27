@@ -614,6 +614,11 @@ if cmd == "launch", !args.isEmpty { // launch APP [extra open arguments]
   }
   print(up == nil ? "down" : "up"); exit(0)
 }
+if cmd == "awake", args.count == 1 { // keep a covered Chromium window running at full speed (see keepAwake)
+  let (app, root) = appRoot(args[0])
+  if sky(app), let win = window(root) { keepAwake(win) }
+  exit(0)
+}
 if cmd == "front" { print(NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? ""); exit(0) }
 if !AXIsProcessTrusted() {
   fail("Accessibility is not granted to the app running mac; run mac setup")
@@ -698,6 +703,10 @@ case ("scroll", 2), ("scroll", 3): // scroll APP up|down|left|right [TARGET], --
   let n = dir == "up" || dir == "left" ? lines : -lines
   skyMouse(app, win, at: p, dir == "up" || dir == "down" ? .scroll(dy: n, dx: 0) : .scroll(dy: 0, dx: n))
   print("scrolled \(dir) \(lines) lines at \(Int(p.x)),\(Int(p.y))")
+case ("frame", 1): // the window's screen rect, x,y,w,h
+  let (_, win) = appWindow(args[0])
+  guard let f = frame(win) else { fail("no window frame (screen locked?)") }
+  print("\(Int(f.minX)),\(Int(f.minY)),\(Int(f.width)),\(Int(f.height))")
 case ("shot", 2):
   let (app, root) = appRoot(args[0])
   guard let win = window(root) else { fail("\(args[0]) has no window") }

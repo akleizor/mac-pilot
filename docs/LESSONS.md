@@ -117,3 +117,10 @@ native apps (System Settings). Check each one on your machine before relying on 
   is to watch the front and hand it back at once.
 - Timings with the calibrated waits: a background click about 150 ms end to end
   (Node start, read, act), a drag about 300 ms, typing a field under 100 ms.
+- Web pages through AppleScript JavaScript (2026-10-27): a read of the page's controls
+  is 0.2–0.3 s, an action the same, and the browser stays behind. A covered Chromium
+  window still loads pages slowly, so the web path pins it awake too (`awake`). A tab
+  between two pages returns nothing to JavaScript: wait for the new page. Jev driving
+  web pages took about 2 s per decision and looped (typing the same text 8 times
+  instead of pressing Enter); an agent chaining the steps did the task in one call.
+

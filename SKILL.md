@@ -21,6 +21,7 @@ machine's own notes.
 | `key <combo>` | `return`, `escape`, `tab`, `cmd+a`, `cmd+shift+n` … sent to that app |
 | `menu "File > New"` | Choose a menu-bar item |
 | `shot FILE.png` | Screenshot the window, even covered or on another Desktop (Screen Recording) |
+| `record FILE.mov` | Video of the window's screen area in the background (`--seconds N`, default 30); keep it uncovered |
 | `open` · `apps` | Launch in the background · list apps with a window |
 | `plan FILE` | A JSON plan: deterministic steps, checked postconditions, one bounded recovery |
 | `flow "GOAL"` | For runs with no agent watching: a decision model picks each step (2–4 s) |
@@ -56,10 +57,19 @@ $M shot --app TradingView /tmp/tv.png && $M drag --app TradingView --at 620,410 
 
 ## Browsers
 
-For a web page, try `js` before `dump`/`click`: one call (about 0.2 s) reads or
-changes the page in the user's own signed-in profile, in any tab, hidden or not,
-with no window shown, no extension and no CDP. Do several steps in one script; the
-last expression is printed (`JSON.stringify` objects; promises are not awaited).
+In a browser that allows JavaScript from Apple Events (table below), `dump`, `click`,
+`type`, `scroll` and `key return` work on the page itself, about 0.2–0.3 s each, with
+no window shown: `dump` lists the controls in view with refs and window-local
+centres (`x,y`, ready for `click --at` and `drag`); a label is found anywhere on
+the page, off screen too; a click that opens a page waits for it. `click --real`
+clicks with the mouse at the control, for pages that ignore script clicks. `js`
+runs any script in the tab (the last expression is printed; promises are not
+awaited); open a page with `js 'location.href="…"'`. `--url PART` picks a tab.
+A browser that blocks JavaScript gets the Accessibility path instead, slower.
+
+Speed comes from chaining: write the whole task as one shell call (`&&`), checks
+included, or as one `js` script. On the web, `flow` with Jev was slower (about
+2 s per decision) and picked wrong steps, so you choose the steps.
 
 | Browser | `js` needs, once |
 |---|---|
@@ -81,6 +91,7 @@ CAPTCHA or a "verify you are human" check goes to the user, never a solver.
 
 ```bash
 $M tabs --app "Google Chrome"
+$M dump --app "Google Chrome" && $M type --app "Google Chrome" "Search" "Lantau Island" && $M key return --app "Google Chrome" && $M dump --app "Google Chrome"
 $M js --app "Google Chrome" --url docs.google.com 'document.title'
 echo 'document.querySelector("#q").value="x"; document.forms[0].submit()' | $M js --app "Google Chrome"
 ```
