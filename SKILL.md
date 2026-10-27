@@ -1,6 +1,6 @@
 ---
 name: mac-pilot
-description: "Operate any macOS app in the background, the way a person would but without taking the user's pointer, keyboard focus or front window: read a window, click (left, right, double), drag, scroll, type, press keys and shortcuts, choose menus, screenshot one window, answer password and permission dialogs. Works on native apps and on Electron/Chromium apps (TradingView, Lark, VS Code, Discord, Chrome), and on canvases through window-local points. Use instead of screenshot-driven computer use for anything on this Mac ('configure X in app Y', 'move the line on this chart', 'approve the admin password prompt'). Websites in the agent browser go through browser-ops; the iPhone through iphone-ops."
+description: "Operate any macOS app in the background, the way a person would but without taking the user's pointer, keyboard focus or front window: read a window, click (left, right, double), drag, scroll, type, press keys and shortcuts, choose menus, screenshot one window, answer password and permission dialogs. Works on native apps and on Electron/Chromium apps (TradingView, Lark, VS Code, Discord, Chrome), on canvases through window-local points, and inside web pages in Chrome, Edge, Brave or Safari through JavaScript in any tab. Use instead of screenshot-driven computer use for anything on this Mac ('configure X in app Y', 'move the line on this chart', 'approve the admin password prompt'). Websites in the agent browser go through browser-ops; the iPhone through iphone-ops."
 ---
 
 # mac-pilot
@@ -56,13 +56,22 @@ $M shot --app TradingView /tmp/tv.png && $M drag --app TradingView --at 620,410 
 
 ## Browsers
 
-For a web page in Chrome, Edge or Brave, use `js` before `dump`/`click`: one call
-(about 0.2 s) reads or changes the page in the user's own signed-in profile, in
-any tab, hidden or not, with no window shown, no extension and no CDP. Do several
-steps in one script; the last expression is printed (`JSON.stringify` objects;
-promises are not awaited). The browser needs View > Developer > Allow JavaScript
-from Apple Events, turned on once by the user (Chrome greys it out from the
-background); `js` says so when it is off. Dia allows it only with a launch flag.
+For a web page, try `js` before `dump`/`click`: one call (about 0.2 s) reads or
+changes the page in the user's own signed-in profile, in any tab, hidden or not,
+with no window shown, no extension and no CDP. Do several steps in one script; the
+last expression is printed (`JSON.stringify` objects; promises are not awaited).
+
+| Browser | `js` needs, once |
+|---|---|
+| Chrome, Edge, Brave | View > Developer > Allow JavaScript from Apple Events |
+| Safari | Settings > Advanced > Show features for web developers, then Develop > Allow JavaScript from Apple Events |
+| Dia | Started with `--enable-applescript-javascript` |
+| Firefox | Not possible: use gestures |
+
+When `js` is blocked, say once which setting would make it faster, then carry on
+with gestures; never change a browser setting yourself. The first `js` to a browser
+makes macOS ask the user to allow the terminal to control it (Automation).
+
 Fall back to AX gestures (`dump`, `click`, `type --keys`, `click --at`) when a
 page script cannot reach the thing or the page ignores it: canvas editors (Google
 Docs and Sheets body text), cross-site iframes (payment and sign-in boxes),
