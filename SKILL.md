@@ -61,7 +61,11 @@ In a browser that allows JavaScript from Apple Events (table below), `dump`, `cl
 `type`, `scroll` and `key return` work on the page itself, about 0.2–0.3 s each, with
 no window shown: `dump` lists the controls in view with refs and window-local
 centres (`x,y`, ready for `click --at` and `drag`); a label is found anywhere on
-the page, off screen too; a click that opens a page waits for it. `click --real`
+the page, off screen too, and a lookup waits up to 8 s for a control the page adds
+late. `tab`, a click, Enter and typing wait for what they started: a new page
+until it has content, and either way until the page holds still. To search a
+site, open its search URL (`tab "https://site/search?q=…"`) when it has one:
+no typing to go wrong. `click --real`
 clicks with the mouse at the control, for pages that ignore script clicks. `js`
 runs any script in the tab (the last expression is printed; promises are not
 awaited); open a page with `js 'location.href="…"'`. `--url PART` picks a tab.
@@ -90,6 +94,9 @@ included, or as one `js` script. On the web, `flow` with Jev was slower (about
 | Safari | Settings > Advanced > Show features for web developers, then Develop > Allow JavaScript from Apple Events |
 | Dia | Started with `--enable-applescript-javascript` |
 | Firefox | Not possible: use gestures |
+
+Safari pages in a covered window run throttled (WebKit marks them hidden), so
+Safari is slower in the background than Chromium browsers.
 
 When `js` is blocked, say once which setting would make it faster, then carry on
 with gestures; never change a browser setting yourself. The first `js` to a browser
