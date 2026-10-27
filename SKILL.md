@@ -63,8 +63,12 @@ steps in one script; the last expression is printed (`JSON.stringify` objects;
 promises are not awaited). The browser needs View > Developer > Allow JavaScript
 from Apple Events, turned on once by the user (Chrome greys it out from the
 background); `js` says so when it is off. Dia allows it only with a launch flag.
-Use AX gestures for what a page script cannot do: native file pickers and real
-drag and drop.
+Fall back to AX gestures (`dump`, `click`, `type --keys`, `click --at`) when a
+page script cannot reach the thing or the page ignores it: canvas editors (Google
+Docs and Sheets body text), cross-site iframes (payment and sign-in boxes),
+`chrome://` and PDF pages, buttons that only take a real click (`isTrusted`),
+native file pickers and drag and drop. Those gestures arrive as real input. A
+CAPTCHA or a "verify you are human" check goes to the user, never a solver.
 
 ```bash
 $M tabs --app "Google Chrome"
