@@ -316,8 +316,8 @@ func frame(_ el: AXUIElement) -> CGRect? {
 // keepAwake: once macOS marks a Chromium window hidden (covered, or on another Desktop) the
 // page stops taking input and drops out of the AX tree. Turning off its occlusion
 // notifications while it is visible pins it awake from then on; done while it is hidden it
-// would pin it asleep. A window covered on this Desktop is moved, never raised, until a corner
-// shows, pinned, and moved back: a sliver of it shows for a moment.
+// would pin it asleep. A window covered on this Desktop is moved, never raised, until its corner
+// shows at the edge of the screen, pinned, and moved back: that corner shows for a moment.
 func keepAwake(_ win: AXUIElement) {
   guard let wid = windowID(win), let slConnection, let slOcclusion else { return }
   let mark = FileManager.default.temporaryDirectory.appendingPathComponent("mac-awake-\(wid)").path // window ids reset on reboot, as does this folder
@@ -348,14 +348,16 @@ func coverers(_ wid: CGWindowID) -> [CGRect] {
     .compactMap { ($0[kCGWindowBounds as String] as? NSDictionary).flatMap { CGRect(dictionaryRepresentation: $0 as CFDictionary) } }
 }
 
-// uncovered: a screen point whose 80x80 square below and right is under no window above wid
+// uncovered: where to put the window's top-left corner so that only an 80x80 square of it
+// shows, on no other window: the screens' bottom-right corners first, so that any flash of
+// the window happens at the edge of the screen, the rest of it off screen
 func uncovered(_ wid: CGWindowID) -> CGPoint? {
   let above = coverers(wid)
   let mainH = NSScreen.screens.first?.frame.height ?? 0
   for s in NSScreen.screens {
     let f = s.visibleFrame, top = mainH - f.maxY // AppKit's bottom-left origin to CG's top-left
-    for y in stride(from: top, to: top + f.height - 80, by: 40) {
-      for x in stride(from: f.minX, to: f.maxX - 80, by: 40) {
+    for y in stride(from: top + f.height - 80, through: top, by: -40) {
+      for x in stride(from: f.maxX - 80, through: f.minX, by: -40) {
         let pts = [0, 40, 79].flatMap { dx in [0, 40, 79].map { dy in CGPoint(x: x + CGFloat(dx), y: y + CGFloat(dy)) } }
         if !pts.contains(where: { p in above.contains { $0.contains(p) } }) { return CGPoint(x: x, y: y) }
       }

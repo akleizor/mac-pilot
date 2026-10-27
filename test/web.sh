@@ -1,7 +1,8 @@
 #!/bin/bash
 # Live check of the web path: a private Chrome with JavaScript from Apple Events allowed opens
 # test/fixture.html behind the front app; dump, type, key return, scroll, click and js must work
-# through the page and Chrome must never come to the front. Exit 1 on a failure.
+# through the page, tab must open the agent's own window and a real click must land there,
+# and Chrome must never stay in front. Exit 1 on a failure.
 set -u
 cd "$(dirname "$0")/.."
 M=bin/mac A="Google Chrome" T=$(mktemp -d)
@@ -24,6 +25,13 @@ check "key:Enter" key return
 check "scrolled 400 px" scroll down --lines 10
 check "y400" js 'document.title'
 check "4" js '2+2'
+check "click" click pad
+check "opened" tab "file://$PWD/test/fixture.html?own"
+check '"pad"' dump
+check "click" click --real pad
+check "saved" shot "$T/own.png"
+check "recording" record "$T/own.mov" --seconds 2
+sleep 3; [ -s "$T/own.mov" ] && echo "ok   recorded the agent's window" || { echo "FAIL no recording"; fails=$((fails+1)); }
 [ "$("$D" front)" != com.google.Chrome ] && echo "ok   Chrome never came to the front" || { echo "FAIL Chrome is in front"; fails=$((fails+1)); }
 osascript -e "quit app \"$A\"" >/dev/null
 for _ in $(seq 40); do pgrep -f -- "--user-data-dir=$T" >/dev/null || break; sleep 0.25; done; rm -rf "$T"

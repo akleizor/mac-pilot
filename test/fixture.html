@@ -1,7 +1,7 @@
 <!doctype html><html><head><title>ready</title></head>
 <body style="margin:0;height:3000px;font:20px sans-serif">
 <input id="f" placeholder="field" style="position:fixed;top:10px;left:10px;width:300px">
-<div style="position:fixed;top:60px;left:10px;width:400px;height:300px;background:#cde" id="pad">pad</div>
+<div style="position:fixed;top:60px;left:10px;width:400px;height:300px;background:#cde;cursor:pointer" id="pad">pad</div>
 <script>
 const log=[];const t=s=>{log.push(s);document.title=log.slice(-4).join(' ')};
 pad.onclick=e=>t('click'+(e.metaKey?'+cmd':'')+(e.shiftKey?'+shift':''));pad.ondblclick=e=>t('dbl');
