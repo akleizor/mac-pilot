@@ -374,10 +374,14 @@ func visible(_ wid: CGWindowID) -> Bool {
         let me = onScreen.first(where: { ($0[kCGWindowNumber as String] as? NSNumber)?.uint32Value == wid }),
         let r = rect(me) else { return false }
   let above = coverers(wid)
-  for i in 0..<5 { for j in 0..<5 {
-    let p = CGPoint(x: r.minX + r.width * (CGFloat(i) + 0.5) / 5, y: r.minY + r.height * (CGFloat(j) + 0.5) / 5)
+  let mainH = NSScreen.screens.first?.frame.height ?? 0
+  let screens = NSScreen.screens.map { CGRect(x: $0.frame.minX, y: mainH - $0.frame.maxY, width: $0.frame.width, height: $0.frame.height) }
+  // only the on-screen part counts: a window parked mostly off screen shows just its corner
+  let shown = screens.map { $0.intersection(r) }.filter { !$0.isNull }
+  for s in shown { for i in 0..<5 { for j in 0..<5 {
+    let p = CGPoint(x: s.minX + s.width * (CGFloat(i) + 0.5) / 5, y: s.minY + s.height * (CGFloat(j) + 0.5) / 5)
     if !above.contains(where: { $0.contains(p) }) { return true }
-  } }
+  } } }
   return false
 }
 
