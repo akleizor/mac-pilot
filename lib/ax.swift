@@ -639,7 +639,10 @@ if cmd == "trusted" {
   print(AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": prompt] as CFDictionary) ? "granted" : "not granted")
   exit(0)
 }
-if cmd == "running" { print(args.first.flatMap(findApp) == nil ? "down" : "up"); exit(0) }
+if cmd == "running" { // "up" only with a window to work in: a running app with none needs a launch to reopen one
+  let a = args.first.flatMap(findApp)
+  print(a.map { !((attr(AXUIElementCreateApplication($0.processIdentifier), "AXWindows") as? [AXUIElement]) ?? []).isEmpty } == true ? "up" : "down"); exit(0)
+}
 if cmd == "launch", !args.isEmpty { // launch APP [extra open arguments]
   // Most apps activate themselves when they open a window, `open -g` or not. Watch the front
   // every 10 ms and hand it straight back to the app the user was in.
