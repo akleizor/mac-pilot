@@ -685,8 +685,11 @@ if cmd == "behind", !args.isEmpty { // behind CMD ARGS: run it, and hand back th
   FileHandle.standardOutput.write(out.fileHandleForReading.readDataToEndOfFile())
   exit(p.isRunning ? 1 : p.terminationStatus)
 }
-if cmd == "awake", args.count == 1 { // keep a covered Chromium window running at full speed (see keepAwake)
+if cmd == "awake", args.count == 1 { // keep a browser's pages running at full speed (see keepAwake)
   let (app, root) = appRoot(args[0])
+  // a hidden app (cmd+H) has no window on screen, so every page reports hidden and is throttled:
+  // unhide puts its windows back where they were without making it the front app
+  if app.isHidden { app.unhide(); for _ in 0..<50 where app.isHidden { RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.01)) } }
   if sky(app), let win = window(root) { keepAwake(win) }
   exit(0)
 }
