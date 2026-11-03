@@ -67,7 +67,9 @@ func innerText(_ el: AXUIElement, _ depth: Int) -> String {
 
 // exact name or bundle id only: a looser match once resolved "System Settings" to another app
 func findApp(_ name: String) -> NSRunningApplication? {
-  NSWorkspace.shared.runningApplications.first { $0.localizedName == name || $0.bundleIdentifier == name }
+  // a pid reaches a process that owns no app entry, such as the open panel service drawn inside System Settings
+  if let pid = pid_t(name) { return NSRunningApplication(processIdentifier: pid) }
+  return NSWorkspace.shared.runningApplications.first { $0.localizedName == name || $0.bundleIdentifier == name }
 }
 
 func appRoot(_ name: String) -> (NSRunningApplication, AXUIElement) {

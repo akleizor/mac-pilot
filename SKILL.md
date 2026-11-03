@@ -5,8 +5,10 @@ description: "Operate any macOS app in the background, the way a person would bu
 
 # mac-pilot
 
-`M=<this skill folder>/bin/mac`. Every command takes `--app NAME` (exact app name or
-bundle id); `$M apps` lists the apps that have a window. If this skill folder has a
+`M=<this skill folder>/bin/mac`. Every command takes `--app NAME` (exact app name,
+bundle id, or pid); `$M apps` lists the apps that have a window. A system file picker
+(Open/Add in System Settings) is a separate process with no app entry: pass its pid,
+from `pgrep -f com.apple.appkit.xpc.openAndSavePanelService`. If this skill folder has a
 `references/` directory, read the file there that matches the task: it holds this
 machine's own notes.
 
