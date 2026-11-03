@@ -127,7 +127,8 @@ func read(_ name: String, window pick: AXUIElement? = nil) -> (NSRunningApplicat
         var it = Item(ref: String(els.count), role: String((sub.isEmpty ? role : sub).dropFirst(2)),
                       label: label.isEmpty ? "(unlabeled field)" : label, kind: kind)
         let value = clean(a["AXValue"])
-        if kind == "TYPE_TEXT", !value.isEmpty { it.value = String(value.prefix(80)) }
+        // a password field's value is never printed: dumps land in agent transcripts
+        if kind == "TYPE_TEXT", !value.isEmpty { it.value = sub == "AXSecureTextField" ? "(filled)" : String(value.prefix(80)) }
         if role == "AXCheckBox" { it.state = (a["AXValue"] as? NSNumber)?.intValue == 1 ? "on" : "off" }
         if (a["AXSelected"] as? Bool) == true { it.selected = true }
         items.append(it)
