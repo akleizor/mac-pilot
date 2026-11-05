@@ -1,7 +1,7 @@
 // A missing piece must fail the check: `mac setup` and the CI both run this
 // against a fresh cache with no Swift compiler on PATH.
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, symlinkSync } from "node:fs";
+import { mkdtempSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { join, dirname } from "node:path";
@@ -14,6 +14,8 @@ if (!process.env.CI) check("with everything installed", run({}), 0); // CI runne
 const bare = mkdtempSync(join(tmpdir(), "mac-check-"));
 symlinkSync(process.execPath, join(bare, "node"));
 for (const tool of ["readlink", "dirname", "open"]) symlinkSync(`/usr/bin/${tool}`, join(bare, tool));
-check("with no Swift on PATH", run({ PATH: `${bare}:/bin`, XDG_CACHE_HOME: mkdtempSync(join(tmpdir(), "mac-cache-")) }), 1);
+const cache = mkdtempSync(join(tmpdir(), "mac-cache-"));
+try { check("with no Swift on PATH", run({ PATH: `${bare}:/bin`, XDG_CACHE_HOME: cache }), 1); }
+finally { for (const d of [bare, cache]) rmSync(d, { recursive: true, force: true }); }
 console.log(failures ? `${failures} failed` : "self-check passed");
 process.exitCode = failures ? 1 : 0;
