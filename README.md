@@ -36,8 +36,9 @@ done: 1 action(s) in 1.3s — {"app":"System Settings","window":"About"} (verify
   a label that matches twice, a field the command would not act on.
 - **Script-friendly**: `dump --json`, `wait TEXT [--gone]`, `--wait 0` to refuse a
   missing label at once, messages on stderr and exit codes to branch on (3 not
-  there, 4 timed out). Each agent session keeps its own `@N` refs, so several
-  agents can drive one app.
+  there, 4 timed out, 5 busy) with a `retry:` line saying whether running it again
+  is safe. Each agent session keeps its own `@N` refs and actions on one app take
+  turns, so several agents can drive one app.
 - **Runs without an agent**: `flow "GOAL"` asks
   [TypeSafe Jev](https://typesafe.ai) (or any OpenAI-compatible model) to choose
   each step (~0.3 s) among what is on screen, and stops on anything risky;

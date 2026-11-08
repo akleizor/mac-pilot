@@ -57,7 +57,11 @@ $M shot --app TradingView /tmp/tv.png && $M drag --app TradingView --at 620,410 
   `dump` (or `wait TEXT`) and act on what is there, never on what you expect. A label
   you know may be missing takes `--wait 0`, so its absence costs nothing.
 - **Branch on the exit code, not the text**: 0 done, 1 error, 2 usage, 3 not there
-  (app, window, control, stale `@N`), 4 `wait` timed out. Messages go to stderr.
+  (app, window, control, stale `@N`), 4 `wait` timed out, 5 busy. Messages go to stderr,
+  with a `retry:` line: 2–5 did nothing, so run it again; after 1 the action may have
+  landed, so `dump` before you retry.
+- **Actions on one app take turns** across agents (a lease, released when the action
+  ends, taken over after 30 s if its holder died); reads never wait.
 - **Refs are yours alone.** `@N` is checked against your own last dump, kept per
   agent session (`MAC_SESSION`, else the agent's session id), so two agents on one
   app never read each other's numbering.
