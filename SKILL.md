@@ -46,7 +46,8 @@ $M shot --app TradingView /tmp/tv.png && $M drag --app TradingView --at 620,410 
   windows: the pointer, keyboard focus and front app stay put. Do not activate,
   raise or `open -a` an app, do not send keys through System Events (they land in
   whatever is in front), and do not use screenshot-and-click computer use on an
-  app `mac` can reach. Bring an app forward only when the user asks. (A menu item
+  app `mac` can reach. Bring an app forward only when the user asks, or with
+  `--front` when nobody is using the Mac (below). (A menu item
   that opens a window can still bring its app forward: Finder "New Finder Window" did.)
 - **Chain the whole task in one shell call**, checks included (`&&`). An agent
   turn costs 10–30 s and an action 0.1–0.3 s: one chat message sent step by step
@@ -173,6 +174,21 @@ echo 'document.querySelector("#q").value="x"; document.forms[0].submit()' | $M j
 - **`type --keys`** types real keystrokes globally, for sign-in sheets drawn by
   another process (they show a value but never submit it). It refuses unless the
   app is in front, so use it only when the user has brought the app forward.
+- **`--front`** on `click`, `click --at`, `type` and `key` is the answer when
+  background input is ignored: macOS password boxes (Passwords "Passwords Is
+  Locked", Keychain), a field that fills but never submits, or a control `dump`
+  cannot see (Passwords' toolbar Edit; click it `--at X,Y` from `shot`). It
+  brings the app forward, refuses unless it really is in front, sends HID-level
+  keys or a real click (the pointer goes back afterwards), then hands the front
+  back. It takes the screen for about a second, so use it only when nobody is
+  at the Mac. Displays asleep means that: wake them (`caffeinate -u -t 60 &`),
+  work, then `pmset displaysleepnow`. Type and submit in one call (`--submit`
+  presses Return in the same front session; a separate `key` call loses the
+  field). A secure field shows no value in `dump` either way: check the result,
+  not the field. Never answer "cannot type into it" before trying `--front`:
+  ```bash
+  PW="$(your-password-tool)" $M type --app Passwords Password --secret PW --front --submit
+  ```
 - **Privacy switches** in System Settings (Privacy & Security → Automation and
   the like) do not flip from an accessibility press: macOS guards them. Answer
   the permission prompt when it appears instead.

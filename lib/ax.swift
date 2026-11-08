@@ -221,7 +221,7 @@ let MODS: [String: CGEventFlags] = [
   "fn": .maskSecondaryFn,
 ]
 
-func keyStroke(_ combo: String, pid: pid_t) -> Bool {
+func keyStroke(_ combo: String, pid: pid_t?) -> Bool { // pid nil: a HID-level key to whatever is in front
   var flags = CGEventFlags(), code: CGKeyCode?
   for part in combo.lowercased().split(separator: "+").map(String.init) {
     if let m = MODS[part] { flags.insert(m) } else { code = KEYCODES[part] }
@@ -230,7 +230,7 @@ func keyStroke(_ combo: String, pid: pid_t) -> Bool {
   for down in [true, false] {
     let e = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: down)!
     e.flags = flags
-    e.postToPid(pid)
+    if let pid { e.postToPid(pid) } else { e.post(tap: .cghidEventTap) }
   }
   return true
 }
@@ -544,6 +544,67 @@ func toApp(_ app: NSRunningApplication, _ body: () -> Void) {
   activeWhile(app, wid, keys: true, settle: 10_000, body)
 }
 
+// inFront is the --front path for what background input cannot reach: macOS password
+// boxes (Passwords, Keychain) and controls missing from Accessibility. It brings the app to
+// the front, refuses unless it really is in front, runs body with HID-level events, then
+// hands the front back to the app that had it.
+func inFront(_ app: NSRunningApplication, _ body: () -> Void) {
+  let pid = app.processIdentifier, before = NSWorkspace.shared.frontmostApplication
+  let isFront = { NSWorkspace.shared.frontmostApplication?.processIdentifier == pid }
+  if !isFront() {
+    app.unhide(); app.activate()
+    for _ in 0..<100 where !isFront() { RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.02)) }
+    if !isFront(), let id = app.bundleIdentifier { // activate() often fails from a background process
+      Process.launchedProcess(launchPath: "/usr/bin/open", arguments: ["-b", id]).waitUntilExit()
+      for _ in 0..<100 where !isFront() { RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.02)) }
+    }
+    guard isFront() else { fail("\(app.localizedName ?? "app") did not come to the front; nothing sent") }
+  }
+  // the app being front is not enough: its window must be main and key, or keys go nowhere
+  let root = AXUIElementCreateApplication(pid)
+  AXUIElementSetAttributeValue(root, "AXFrontmost" as CFString, kCFBooleanTrue)
+  if let w = window(root) {
+    AXUIElementPerformAction(w, kAXRaiseAction as CFString)
+    AXUIElementSetAttributeValue(w, kAXMainAttribute as CFString, kCFBooleanTrue)
+    AXUIElementSetAttributeValue(w, kAXFocusedAttribute as CFString, kCFBooleanTrue)
+  }
+  usleep(400_000) // its key window settles after activation
+  body()
+  usleep(300_000)
+  if let b = before, b.processIdentifier != pid {
+    b.activate()
+    if NSWorkspace.shared.frontmostApplication != b, let id = b.bundleIdentifier {
+      Process.launchedProcess(launchPath: "/usr/bin/open", arguments: ["-b", id]).waitUntilExit()
+    }
+  }
+}
+
+// hidClick clicks a window-local point with a real mouse event, then puts the pointer back.
+func hidClick(_ win: AXUIElement, at local: CGPoint, _ g: Gesture, mods: CGEventFlags = []) {
+  guard let wf = frame(win) else { fail("no window frame (screen locked?)") }
+  guard local.x >= 0, local.y >= 0, local.x < wf.width, local.y < wf.height else {
+    fail("\(Int(local.x)),\(Int(local.y)) is outside the \(Int(wf.width))x\(Int(wf.height)) window")
+  }
+  let p = CGPoint(x: wf.minX + local.x, y: wf.minY + local.y), home = CGEvent(source: nil)?.location
+  let src = CGEventSource(stateID: .hidSystemState)
+  let (down, up, button): (CGEventType, CGEventType, CGMouseButton) =
+    { if case .right = g { return (.rightMouseDown, .rightMouseUp, .right) }; return (.leftMouseDown, .leftMouseUp, .left) }()
+  var clicks: [Int64] = [1]
+  if case .double = g { clicks = [1, 2] }
+  CGEvent(mouseEventSource: src, mouseType: .mouseMoved, mouseCursorPosition: p, mouseButton: .left)?.post(tap: .cghidEventTap)
+  usleep(50_000)
+  for n in clicks {
+    for t in [down, up] {
+      let e = CGEvent(mouseEventSource: src, mouseType: t, mouseCursorPosition: p, mouseButton: button)!
+      e.setIntegerValueField(.mouseEventClickState, value: n)
+      e.flags = mods
+      e.post(tap: .cghidEventTap)
+      usleep(30_000)
+    }
+  }
+  if let home { CGWarpMouseCursorPosition(home) }
+}
+
 // shortcut presses the menu item bound to a cmd combo: a background Chromium app drops
 // synthetic cmd keys, but its menu bar still takes an AX press.
 func shortcut(_ app: NSRunningApplication, _ combo: String) -> Bool {
@@ -721,7 +782,9 @@ func pt(_ v: [String]?) -> CGPoint? {
 let at = pt(take("--at")), to = pt(take("--to"))
 let lines = take("--lines").flatMap { Int32($0[0]) } ?? 5
 let right = args.contains("--right"), double = args.contains("--double")
-args.removeAll { $0 == "--right" || $0 == "--double" }
+let front = args.contains("--front") // real input with the app in front: see inFront
+let submit = args.contains("--submit") // type --front: press Return after the text
+args.removeAll { $0 == "--right" || $0 == "--double" || $0 == "--front" || $0 == "--submit" }
 let gesture: Gesture = right ? .right : double ? .double : .click
 var mods = CGEventFlags() // --mods cmd+shift on click and drag
 for m in (take("--mods")?[0] ?? "").lowercased().split(separator: "+") {
@@ -756,8 +819,13 @@ case ("dump", 1):
 case ("click", 1): // canvases (charts, maps) have no controls: a window-local point, then confirm with shot
   guard let at else { fail("click needs a target, or --at X,Y (window-local points)") }
   let (app, win) = appWindow(args[0])
-  skyMouse(app, win, at: at, gesture, mods: mods)
+  if front { inFront(app) { hidClick(win, at: at, gesture, mods: mods) } }
+  else { skyMouse(app, win, at: at, gesture, mods: mods) }
   print("\(right ? "right-" : double ? "double-" : "")clicked at \(Int(at.x)),\(Int(at.y))")
+case ("click", 2) where front: // a control background presses don't reach: a real click at its centre
+  let (app, win, p, it) = centre(args[0], args[1], kind: "CLICK")
+  inFront(app) { hidClick(win, at: p, gesture, mods: mods) }
+  print("\(right ? "right-" : double ? "double-" : "")clicked \(it.role) \"\(it.label)\" (in front)")
 case ("click", 2) where right || double || !mods.isEmpty: // AX has no right, double or modified press: the gesture at the control's centre
   let (app, win, p, it) = centre(args[0], args[1], kind: "CLICK")
   skyMouse(app, win, at: p, gesture, mods: mods)
@@ -810,7 +878,15 @@ case ("click", 2):
 case ("type", 2): // the text arrives on stdin, never on a command line
   let (app, _, els, _, it) = resolve(args[0], args[1], kind: "TYPE_TEXT")
   let el = els[Int(it.ref)! - 1], text = stdinText()
-  if keys {
+  if front {
+    // macOS password boxes take only real keys, typed into the focused field of the front app
+    inFront(app) {
+      AXUIElementSetAttributeValue(el, kAXFocusedAttribute as CFString, kCFBooleanTrue)
+      _ = keyStroke("cmd+a", pid: nil); _ = keyStroke("delete", pid: nil)
+      typeText(text, pid: nil)
+      if submit { usleep(100_000); _ = keyStroke("return", pid: nil) } // same front session: a second call loses the field
+    }
+  } else if keys {
     // Apple's sign-in sheets are drawn by another process and ignore an AX value and
     // app-targeted keys; global keys go wherever focus is, so the app must be in front.
     guard NSWorkspace.shared.frontmostApplication?.processIdentifier == app.processIdentifier
@@ -833,7 +909,8 @@ case ("act", 3): // flow: act APP REF OP --was LABEL ROLE; the ref must still na
 case ("key", 2):
   let (app, _) = appRoot(args[0])
   var known = true
-  if !(sky(app) && shortcut(app, args[1])) { toApp(app) { known = keyStroke(args[1], pid: app.processIdentifier) } }
+  if front { inFront(app) { known = keyStroke(args[1], pid: nil) } }
+  else if !(sky(app) && shortcut(app, args[1])) { toApp(app) { known = keyStroke(args[1], pid: app.processIdentifier) } }
   guard known else { fail("unknown key in \(args[1])") }
   print("pressed \(args[1])")
 case ("menu", 2): menu(args[0], args[1])
