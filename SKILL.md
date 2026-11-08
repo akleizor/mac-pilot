@@ -14,12 +14,15 @@ machine's own notes.
 
 | Command | Does |
 |---|---|
-| `dump` | Controls as `@N [Role] "label" = value (state)`, then the window's text |
+| `dump` | Controls as `@N [Role] "label" = value (state)`, then the window's text and the app's other windows; `--json` for scripts |
+| `wait TEXT` | Until a control, the window title or its text shows TEXT (`--gone`: until it does not); `--timeout S`, default 30 |
 | `click <@N\|label>` | Press a control, or select a list or sidebar row; `--right` / `--double` |
 | `click --at X,Y` | Click a window-local point (canvases: charts, maps) |
 | `drag --at X,Y --to X,Y` | Drag between window-local points |
 | `scroll <up\|down\|left\|right> [@N\|label]` | Scroll the window (`--lines N`, default 5; `--at X,Y`), or bring a control into view |
 | `type <@N\|label> TEXT` | Set a field; `--secret ENVVAR` reads the text from the environment |
+| `--window TITLE` | On any command: that window (exact title, else the one title containing it) instead of the focused one |
+| `--wait S` | On click/type/scroll: how long to look for a missing label (default 3 s); `--wait 0` refuses at once |
 | `key <combo>` | `return`, `escape`, `tab`, `cmd+a`, `cmd+shift+n` … sent to that app |
 | `menu "File > New"` | Choose a menu-bar item |
 | `shot FILE.png` | Screenshot the window, even covered or on another Desktop (Screen Recording) |
@@ -50,6 +53,14 @@ $M shot --app TradingView /tmp/tv.png && $M drag --app TradingView --at 620,410 
   took 5 minutes, as one call about 10 s. You pick the steps yourself; `flow` is
   for scripts with no agent, and a small model picking steps was slower (12.6 s vs
   1.9 s) and chose wrong paths.
+- **Look, then act.** A prompt may or may not come, with or without a password field:
+  `dump` (or `wait TEXT`) and act on what is there, never on what you expect. A label
+  you know may be missing takes `--wait 0`, so its absence costs nothing.
+- **Branch on the exit code, not the text**: 0 done, 1 error, 2 usage, 3 not there
+  (app, window, control, stale `@N`), 4 `wait` timed out. Messages go to stderr.
+- **Refs are yours alone.** `@N` is checked against your own last dump, kept per
+  agent session (`MAC_SESSION`, else the agent's session id), so two agents on one
+  app never read each other's numbering.
 - **Verify every step** from a fresh `dump` (a field value, a row status, the
   window title) or a `shot`. Never trust an exit status: a "clicked" with no
   effect cost the most time.

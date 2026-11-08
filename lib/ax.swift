@@ -22,7 +22,7 @@ struct Item: Codable {
   var ref: String, role: String, label: String, kind: String
   var value: String? = nil, state: String? = nil, selected: Bool? = nil
 }
-struct Dump: Codable { var app: String, window: String, items: [Item], context: [String], locked: Bool? = nil }
+struct Dump: Codable { var app: String, window: String, items: [Item], context: [String], locked: Bool? = nil, others: [String]? = nil }
 
 func fail(_ msg: String) -> Never { print(msg); exit(1) }
 
@@ -89,6 +89,14 @@ func window(_ root: AXUIElement) -> AXUIElement? {
       guard let f = frame(w) else { return false }
       return abs(f.minX - n[0]) < 3 && abs(f.minY - n[1]) < 3 && abs(f.width - n[2]) < 3 && abs(f.height - n[3]) < 3
     }
+  }
+  // MAC_WINDOW_TITLE (mac --window TITLE): the window with that exact title, else the one title containing it
+  if let want = ProcessInfo.processInfo.environment["MAC_WINDOW_TITLE"] {
+    let all = (attr(root, "AXWindows") as? [AXUIElement]) ?? []
+    if let w = all.first(where: { clean(attr($0, "AXTitle")) == want }) { return w }
+    let hits = all.filter { clean(attr($0, "AXTitle")).lowercased().contains(want.lowercased()) }
+    if hits.count == 1 { return hits[0] }
+    fail(hits.isEmpty ? "no window titled \(want)" : "\(hits.count) windows match \(want)")
   }
   return element(attr(root, "AXFocusedWindow")) ?? element(attr(root, "AXMainWindow"))
     ?? (attr(root, "AXWindows") as? [AXUIElement])?.first
@@ -739,7 +747,11 @@ args.removeAll { $0 == "--keys" }
 switch (cmd, args.count) {
 case ("apps", _): apps()
 case ("dump", 1):
-  let (_, d, _, _) = read(args[0])
+  var (app, d, _, win) = read(args[0])
+  // name the app's other windows (a prompt, a panel): `click LABEL` reaches them, `--window` dumps one
+  let others = ((attr(AXUIElementCreateApplication(app.processIdentifier), "AXWindows") as? [AXUIElement]) ?? [])
+    .filter { !CFEqual($0, win) }.map { clean(attr($0, "AXTitle")) }.filter { !$0.isEmpty }
+  if !others.isEmpty { d.others = others }
   print(String(data: try! JSONEncoder().encode(d), encoding: .utf8)!)
 case ("click", 1): // canvases (charts, maps) have no controls: a window-local point, then confirm with shot
   guard let at else { fail("click needs a target, or --at X,Y (window-local points)") }
