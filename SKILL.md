@@ -190,11 +190,14 @@ echo 'document.querySelector("#q").value="x"; document.forms[0].submit()' | $M j
   PW="$(your-password-tool)" $M type --app Passwords Password --secret PW --front --submit
   ```
 - **Permission prompts** ("X would like to access files on a removable volume",
-  "find devices on local networks"): `$M dump --app UserNotificationCenter`, then
-  `$M click --app UserNotificationCenter Allow`. macOS ignores accessibility
-  presses there, so `click` on that app always sends real input (`--front`). A
-  prompt left open hangs every process that waits on that permission: answer it
-  as soon as your own work raised it.
+  "find devices on local networks") are expected, not discovered: run anything
+  that may raise one (the first run of a new build or install, a job touching an
+  external disk or the LAN) inside `$M allow [--for NAME] -- CMD`. It answers
+  those two kinds while CMD runs, leaves any other prompt for a person (named on
+  stderr) and exits with CMD's code; `$M allow` alone answers any open now. A
+  prompt left open hangs every process that waits on that permission. By hand:
+  `$M click --app UserNotificationCenter Allow` (always real input there: macOS
+  ignores accessibility presses on these prompts).
 - **Privacy switches** in System Settings (Privacy & Security → Automation and
   the like) do not flip from an accessibility press: macOS guards them. Answer
   the permission prompt when it appears instead.
