@@ -723,6 +723,10 @@ if cmd == "launch", !args.isEmpty { // launch APP [extra open arguments]
   let p = Process()
   p.executableURL = URL(fileURLWithPath: "/usr/bin/open")
   p.arguments = ["-g", "-a", args[0]] + args.dropFirst()
+  // the app keeps this environment for life: start it with the Dock's, not the calling agent's
+  let env = ProcessInfo.processInfo.environment
+  p.environment = ["HOME", "USER", "LOGNAME", "SHELL", "TMPDIR", "SSH_AUTH_SOCK", "__CF_USER_TEXT_ENCODING"]
+    .reduce(into: ["PATH": "/usr/bin:/bin:/usr/sbin:/sbin"]) { $0[$1] = env[$1] }
   do { try p.run() } catch { fail("cannot launch \(args[0])") }
   var up: Date?
   for _ in 0..<800 { // 8 s
