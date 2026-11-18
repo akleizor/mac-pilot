@@ -189,6 +189,12 @@ echo 'document.querySelector("#q").value="x"; document.forms[0].submit()' | $M j
   ```bash
   PW="$(your-password-tool)" $M type --app Passwords Password --secret PW --front --submit
   ```
+- **Permission prompts** ("X would like to access files on a removable volume",
+  "find devices on local networks"): `$M dump --app UserNotificationCenter`, then
+  `$M click --app UserNotificationCenter Allow`. macOS ignores accessibility
+  presses there, so `click` on that app always sends real input (`--front`). A
+  prompt left open hangs every process that waits on that permission: answer it
+  as soon as your own work raised it.
 - **Privacy switches** in System Settings (Privacy & Security → Automation and
   the like) do not flip from an accessibility press: macOS guards them. Answer
   the permission prompt when it appears instead.
