@@ -194,7 +194,9 @@ echo 'document.querySelector("#q").value="x"; document.forms[0].submit()' | $M j
   that may raise one (the first run of a new build or install, a job touching an
   external disk or the LAN) inside `$M allow [--for NAME] -- CMD`. It answers
   those two kinds while CMD runs, leaves any other prompt for a person (named on
-  stderr) and exits with CMD's code; `$M allow` alone answers any open now. A
+  stderr) and exits with CMD's code; `$M allow` alone answers any open now.
+  `$M allow --watch -- NOTIFY...` stays running and answers the moment a prompt opens
+  (an AX window notification, no polling); NOTIFY gets the text of any other prompt. A
   prompt left open hangs every process that waits on that permission. By hand:
   `$M click --app UserNotificationCenter Allow` (always real input there: macOS
   ignores accessibility presses on these prompts).

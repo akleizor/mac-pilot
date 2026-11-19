@@ -697,6 +697,36 @@ func apps() {
 }
 
 // ---------- command line ----------
+// watch APP: print one line each time APP opens a window, the moment macOS says so (an AX
+// window-created notification), never by polling: a 3 s sweep per job kept tccd's queue full
+// (2026-11-19). A relaunched APP is observed again; an hourly rescan covers a lost observer.
+func watchPrompts() -> Never {
+  let name = args.first ?? "UserNotificationCenter"
+  setvbuf(stdout, nil, _IOLBF, 0)
+  var observer: AXObserver?  // held so the observer outlives observe()
+  func announce() { print("window"); fflush(stdout) }
+  func observe() {
+    observer = nil
+    guard let app = NSWorkspace.shared.runningApplications.first(where: { $0.localizedName == name }) else { return }
+    let pid = app.processIdentifier
+    var obs: AXObserver?
+    guard AXObserverCreate(pid, { _, _, _, _ in print("window"); fflush(stdout) }, &obs) == .success, let obs else { return }
+    AXObserverAddNotification(obs, AXUIElementCreateApplication(pid), kAXWindowCreatedNotification as CFString, nil)
+    CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(obs), .defaultMode)
+    observer = obs
+    if ((attr(AXUIElementCreateApplication(pid), "AXWindows") as? [AXUIElement]) ?? []).count > 0 { announce() }
+  }
+  NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didLaunchApplicationNotification,
+                                                    object: nil, queue: .main) { n in
+    if (n.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication)?.localizedName == name { observe() }
+  }
+  Timer.scheduledTimer(withTimeInterval: 3600, repeats: true) { _ in observe() }
+  observe()
+  print("watching \(name)"); fflush(stdout)
+  RunLoop.main.run()
+  exit(0)
+}
+
 var args = Array(CommandLine.arguments.dropFirst())
 func take(_ flag: String, count: Int = 1) -> [String]? {
   guard let i = args.firstIndex(of: flag), i + count < args.count else { return nil }
@@ -709,6 +739,7 @@ func stdinText() -> String { String(data: FileHandle.standardInput.readDataToEnd
 // a busy app answers within 3 s or the call fails, instead of blocking for the system default
 AXUIElementSetMessagingTimeout(AXUIElementCreateSystemWide(), 3)
 let cmd = args.isEmpty ? "" : args.removeFirst()
+if cmd == "watch" { watchPrompts() }  // never returns
 if cmd == "trusted" {
   let prompt = args.contains("--prompt")
   print(AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": prompt] as CFDictionary) ? "granted" : "not granted")
