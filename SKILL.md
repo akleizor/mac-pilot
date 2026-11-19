@@ -197,6 +197,9 @@ echo 'document.querySelector("#q").value="x"; document.forms[0].submit()' | $M j
   stderr) and exits with CMD's code; `$M allow` alone answers any open now.
   `$M allow --watch -- NOTIFY...` stays running and answers the moment a prompt opens
   (an AX window notification, no polling); NOTIFY gets the text of any other prompt.
+  `--own NAME` also answers every prompt NAME itself raises, whatever it asks: name your
+  own launcher (a signed wrapper your jobs start under) so a prompt your work raised is
+  answered by your work, at once.
   Run it at normal priority: as a launchd `Background` job it never saw the window (2026-11-19). A
   prompt left open hangs every process that waits on that permission. By hand:
   `$M click --app UserNotificationCenter Allow` (always real input there: macOS
