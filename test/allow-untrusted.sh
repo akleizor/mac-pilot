@@ -9,4 +9,7 @@ printf '#!/bin/sh\necho "$1" >> "%s/calls"\n[ "$1" = trusted ] && echo "not gran
 XDG_CACHE_HOME="$T" bin/mac allow -- sh -c 'sleep 4; exit 3' 2>/dev/null; rc=$?
 [ "$rc" = 3 ] || { echo "FAIL exit $rc, want CMD's 3"; exit 1; }
 [ "$(cat "$T/calls")" = trusted ] || { echo "FAIL driver calls: $(tr '\n' ' ' < "$T/calls")"; exit 1; }
-echo "ok allow without the grant runs CMD and never sweeps"
+start=$(date +%s); XDG_CACHE_HOME="$T" bin/mac allow -- true 2>/dev/null
+[ $(( $(date +%s) - start )) -lt 2 ] || { echo "FAIL allow waited after CMD exited"; exit 1; }
+XDG_CACHE_HOME="$T" bin/mac allow 2>/dev/null && { echo "FAIL a sweep without the grant reported success"; exit 1; }
+echo "ok allow without the grant runs CMD, never sweeps, and never reports a sweep it could not do"
