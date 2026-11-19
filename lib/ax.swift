@@ -707,7 +707,7 @@ func watchPrompts() -> Never {
   func announce() { print("window"); fflush(stdout) }
   func observe() {
     observer = nil
-    guard let app = NSWorkspace.shared.runningApplications.first(where: { $0.localizedName == name }) else { return }
+    guard let app = findApp(name) else { return }
     let pid = app.processIdentifier
     var obs: AXObserver?
     guard AXObserverCreate(pid, { _, _, _, _ in print("window"); fflush(stdout) }, &obs) == .success, let obs else { return }
@@ -718,7 +718,8 @@ func watchPrompts() -> Never {
   }
   NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didLaunchApplicationNotification,
                                                     object: nil, queue: .main) { n in
-    if (n.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication)?.localizedName == name { observe() }
+    let app = n.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+    if app?.localizedName == name || app?.bundleIdentifier == name { observe() }
   }
   Timer.scheduledTimer(withTimeInterval: 3600, repeats: true) { _ in observe() }
   observe()
