@@ -127,7 +127,9 @@ func read(_ name: String, window pick: AXUIElement? = nil) -> (NSRunningApplicat
       let t = clean(a["AXValue"])
       if !t.isEmpty { context.append(t) }
     }
-    if let kind = KIND[role], (a["AXEnabled"] as? Bool) != false {
+    let enabled = (a["AXEnabled"] as? Bool) != false
+    // a disabled password field stays listed: 1Password's lock screen shows one while Touch ID waits
+    if let kind = KIND[role], enabled || clean(a["AXSubrole"]) == "AXSecureTextField" {
       var label = clean(a["AXTitle"]).isEmpty ? clean(a["AXDescription"]) : clean(a["AXTitle"])
       if kind == "TYPE_TEXT", label.isEmpty { label = clean(a["AXPlaceholderValue"]) }
       if label.isEmpty { label = innerText(el, 0) }
@@ -139,6 +141,7 @@ func read(_ name: String, window pick: AXUIElement? = nil) -> (NSRunningApplicat
         let value = clean(a["AXValue"])
         // a password field's value is never printed: dumps land in agent transcripts
         if kind == "TYPE_TEXT", !value.isEmpty { it.value = sub == "AXSecureTextField" ? "(filled)" : String(value.prefix(80)) }
+        if !enabled { it.state = "disabled" }
         if role == "AXCheckBox" { it.state = (a["AXValue"] as? NSNumber)?.intValue == 1 ? "on" : "off" }
         if (a["AXSelected"] as? Bool) == true { it.selected = true }
         items.append(it)
