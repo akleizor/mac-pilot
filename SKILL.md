@@ -196,7 +196,8 @@ echo 'document.querySelector("#q").value="x"; document.forms[0].submit()' | $M j
   those two kinds while CMD runs, leaves any other prompt for a person (named on
   stderr) and exits with CMD's code; `$M allow` alone answers any open now.
   `$M allow --watch -- NOTIFY...` stays running and answers the moment a prompt opens
-  (an AX window notification, no polling); NOTIFY gets the text of any other prompt. A
+  (an AX window notification, no polling); NOTIFY gets the text of any other prompt.
+  Run it at normal priority: as a launchd `Background` job it never saw the window (2026-11-19). A
   prompt left open hangs every process that waits on that permission. By hand:
   `$M click --app UserNotificationCenter Allow` (always real input there: macOS
   ignores accessibility presses on these prompts).
