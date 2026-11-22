@@ -53,6 +53,12 @@ A routine Settings flow takes 2–4 s.
 - For `flow` only: a TypeSafe API key in `TYPESAFE_API_KEY`.
 
 ```bash
+brew install akleizor/tap/mac && mac setup
+```
+
+Or from source:
+
+```bash
 git clone https://github.com/akleizor/mac-pilot && cd mac-pilot
 ./bin/mac setup
 ```
