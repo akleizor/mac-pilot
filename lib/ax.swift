@@ -653,9 +653,10 @@ func ocr(_ app: NSRunningApplication, _ win: AXUIElement) {
   if screenLocked() { fail("the screen is locked: capture cannot work") }
   guard let wf = frame(win), let main = windowID(win), let slConnection, let slCapture else { fail("window capture is unavailable") }
   let info = (CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]]) ?? []
-  // the target first, then the app's other normal-layer windows that overlap it, front to back
+  // the target first, then the app's other windows that overlap it, front to back, any
+  // layer: a search dropdown or menu floats above the normal layer (WeChat's is layer 3)
   var wins: [(CGWindowID, CGRect)] = [(main, wf)]
-  for w in info where (w["kCGWindowOwnerPID"] as? pid_t) == app.processIdentifier && (w["kCGWindowLayer"] as? Int) == 0 {
+  for w in info where (w["kCGWindowOwnerPID"] as? pid_t) == app.processIdentifier {
     guard let id = w["kCGWindowNumber"] as? CGWindowID, id != main,
           let b = w["kCGWindowBounds"] as? [String: CGFloat], let x = b["X"], let y = b["Y"], let ww = b["Width"], let h = b["Height"]
     else { continue }
