@@ -62,8 +62,10 @@ $M shot --app TradingView /tmp/tv.png && $M drag --app TradingView --at 620,410 
   (app, window, control, stale `@N`), 4 `wait` timed out, 5 busy. Messages go to stderr,
   with a `retry:` line: 2–5 did nothing, so run it again; after 1 the action may have
   landed, so `dump` before you retry.
-- **Actions on one app take turns** across agents (a lease, released when the action
-  ends, taken over after 30 s if its holder died); reads never wait.
+- **Actions on one app take turns** across agents (a lease on the app's pid, so its
+  name, bundle id and pid share one; released when the action ends, taken over after
+  30 s if its holder died); reads never wait. `--front` and `type --keys` also take
+  turns on the screen's one front, so two agents never type into each other's app.
 - **Refs are yours alone.** `@N` is checked against your own last dump, kept per
   agent session (`MAC_SESSION`, else the agent's session id), so two agents on one
   app never read each other's numbering.

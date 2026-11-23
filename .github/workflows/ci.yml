@@ -10,3 +10,4 @@ jobs:
       - run: node --check lib/mac.mjs && node --check lib/jev.mjs && node --check lib/plan.mjs && node lib/jev.mjs && node lib/plan.mjs
       - run: swiftc -O lib/ax.swift -o /tmp/mac-ax && /tmp/mac-ax trusted
       - run: node setup-check.mjs
+      - run: bash test/lease.sh && bash test/allow-untrusted.sh

@@ -891,6 +891,9 @@ args.removeAll { $0 == "--keys" }
 
 switch (cmd, args.count) {
 case ("apps", _): apps()
+case ("pid", 1): // the one identity behind a name, bundle id or pid, for the action lease
+  guard let a = findApp(args[0]) else { fail("no running app named \(args[0])") }
+  print(a.processIdentifier)
 case ("dump", 1):
   var (app, d, _, win) = read(args[0])
   // name the app's other windows (a prompt, a panel): `click LABEL` reaches them, `--window` dumps one
