@@ -158,11 +158,20 @@ echo 'document.querySelector("#q").value="x"; document.forms[0].submit()' | $M j
   in the image, `click --at` / `drag --at … --to …` in window-local points, then
   `shot` again to confirm. `shot` prints the image and window sizes: on a Retina
   display divide image pixels by their ratio to get window points.
-- **No accessibility tree** (WeChat 4.x: `dump` is empty). Read with `mac ocr`, not
-  `shot`: it returns text and points, no image. Such apps also ignore background clicks
-  and keys: use `--front`, or activate the app for one chained call and hand the front
-  back. A popup (a search dropdown) closes when the app loses the front, so open and
-  pick it in the same call.
+- **Which way in.** Take the first that works, and never ask the user to do it:
+  1. `dump` reads controls: act with `click`/`type`/`key` in the background. Native,
+     Electron, Qt, Java and iOS apps all read here (checked 2026-11-24).
+  2. A browser page: the same commands go through page JavaScript.
+  3. A canvas (charts, maps): `shot` the window, act `--at X,Y`.
+  4. `dump` is empty (WeChat 4.x, CEF apps such as Futu): `ocr` reads text with points
+     (the first run loads the model, about 20 s), and input needs `--front`. An Electron
+     app's tree can come a few seconds late: dump again before you fall back.
+  5. No window at all (menu-bar apps) or nothing readable: use what `mac` prints under
+     `other ways in`: the app's AppleScript dictionary, URL schemes or bundled CLI, or the
+     app's own scripting (Blender's Python).
+  WeChat-like apps ignore background clicks and keys: use `--front`, or activate the app
+  for one chained call and hand the front back. A popup (a search dropdown) closes when
+  the app loses the front, so open and pick it in the same call.
 - **Text-only lists** (a chat list) have no buttons. Use the app's own search
   (`key cmd+k`), type, `key return`, then verify, e.g. by the input field's label.
 - **Launching.** Most apps take the front when their first window opens, `open -g`
@@ -229,7 +238,8 @@ echo 'document.querySelector("#q").value="x"; document.forms[0].submit()' | $M j
   confirming the lock so the password can never land in an app:
   ```bash
   locked() { ioreg -n Root -d1 -a | plutil -extract IOConsoleUsers.0.CGSSessionScreenIsLocked raw - 2>/dev/null || echo false; }
-  [ "$(locked)" = true ] && PW="$(your-password-tool)" \
+  # the first key wakes the lock screen; the password field appears only after it
+  [ "$(locked)" = true ] && $M key --app loginwindow return && sleep 1 && PW="$(your-password-tool)" \
     $M type --app loginwindow "Enter Password" --secret PW && $M key --app loginwindow return
   ```
 - **Permissions follow the responsible process**, not your terminal: a tmux

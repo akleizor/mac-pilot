@@ -800,7 +800,9 @@ if cmd == "launch", !args.isEmpty { // launch APP [extra open arguments]
   let old = Set(NSWorkspace.shared.runningApplications.map(\.processIdentifier))
   let p = Process()
   p.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-  p.arguments = ["-g", "-a", args[0]] + args.dropFirst()
+  // --app takes a bundle id too: `open -a` knows only names, `open -b` knows ids
+  let byId = NSWorkspace.shared.urlForApplication(withBundleIdentifier: args[0]) != nil
+  p.arguments = ["-g", byId ? "-b" : "-a", args[0]] + args.dropFirst()
   // the app keeps this environment for life: start it with the Dock's, not the calling agent's
   let env = ProcessInfo.processInfo.environment
   p.environment = ["HOME", "USER", "LOGNAME", "SHELL", "TMPDIR", "SSH_AUTH_SOCK", "__CF_USER_TEXT_ENCODING"]
@@ -809,6 +811,7 @@ if cmd == "launch", !args.isEmpty { // launch APP [extra open arguments]
   var up: Date?
   for _ in 0..<800 { // 8 s
     RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.01))
+    if !p.isRunning, p.terminationStatus != 0 { fail("cannot launch \(args[0]): open found no such app") }
     // any change of front in these 1.5 s is the launch (`open -a "Visual Studio Code"` runs as "Code")
     if let b = before, let f = NSWorkspace.shared.frontmostApplication, f != b {
       b.activate()
@@ -891,6 +894,10 @@ args.removeAll { $0 == "--keys" }
 
 switch (cmd, args.count) {
 case ("apps", _): apps()
+case ("path", 1): // the app's bundle, running or not, for the other ways in (AppleScript, URL schemes, CLIs)
+  guard let u = findApp(args[0])?.bundleURL ?? NSWorkspace.shared.urlForApplication(withBundleIdentifier: args[0])
+    ?? NSWorkspace.shared.urlForApplication(toOpen: URL(fileURLWithPath: "/Applications/\(args[0]).app")) else { fail("no app named \(args[0])") }
+  print(u.path)
 case ("pid", 1): // the one identity behind a name, bundle id or pid, for the action lease
   guard let a = findApp(args[0]) else { fail("no running app named \(args[0])") }
   print(a.processIdentifier)
