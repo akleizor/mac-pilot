@@ -7,6 +7,7 @@ import AppKit
 import ApplicationServices
 import ImageIO
 import ScreenCaptureKit
+import Vision
 
 let KIND: [String: String] = [
   "AXButton": "CLICK", "AXCheckBox": "CLICK", "AXRadioButton": "CLICK", "AXPopUpButton": "CLICK",
@@ -645,6 +646,47 @@ func shot(_ app: NSRunningApplication, _ win: AXUIElement, _ path: String) {
   print("saved \(img.width)x\(img.height) \(path) (window \(Int(w.width))x\(Int(w.height)) points)")
 }
 
+// ocr reads apps with no AX tree (WeChat 4.x): it captures the app's on-screen windows,
+// runs on-device Vision text recognition, and prints each line's centre in points local
+// to the target window (popups such as a search dropdown included), ready for click --at.
+func ocr(_ app: NSRunningApplication, _ win: AXUIElement) {
+  if screenLocked() { fail("the screen is locked: capture cannot work") }
+  guard let wf = frame(win), let main = windowID(win), let slConnection, let slCapture else { fail("window capture is unavailable") }
+  let info = (CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]]) ?? []
+  // the target first, then the app's other normal-layer windows that overlap it, front to back
+  var wins: [(CGWindowID, CGRect)] = [(main, wf)]
+  for w in info where (w["kCGWindowOwnerPID"] as? pid_t) == app.processIdentifier && (w["kCGWindowLayer"] as? Int) == 0 {
+    guard let id = w["kCGWindowNumber"] as? CGWindowID, id != main,
+          let b = w["kCGWindowBounds"] as? [String: CGFloat], let x = b["X"], let y = b["Y"], let ww = b["Width"], let h = b["Height"]
+    else { continue }
+    let r = CGRect(x: x, y: y, width: ww, height: h)
+    if r.intersects(wf) { wins.append((id, r)) }
+  }
+  var any = false
+  for (i, (id, r)) in wins.enumerated() {
+    var wid = id
+    guard let arr = slCapture(slConnection(), &wid, 1, 0x800)?.takeRetainedValue(), CFArrayGetCount(arr) > 0 else {
+      if i == 0 { fail("capture returned nothing: grant Screen Recording to the app running mac") }
+      continue
+    }
+    let img = unsafeBitCast(CFArrayGetValueAtIndex(arr, 0), to: CGImage.self)
+    let req = VNRecognizeTextRequest()
+    req.recognitionLevel = .accurate; req.usesLanguageCorrection = false
+    req.recognitionLanguages = ["zh-Hans", "zh-Hant", "en-US"]
+    try? VNImageRequestHandler(cgImage: img).perform([req])
+    let lines = (req.results ?? []).compactMap { o -> String? in
+      guard let t = o.topCandidates(1).first?.string else { return nil }
+      let b = o.boundingBox // normalised, origin bottom-left
+      let x = Int(r.minX - wf.minX + b.midX * r.width), y = Int(r.minY - wf.minY + (1 - b.midY) * r.height)
+      return "\(x),\(y)\t\(t)"
+    }
+    if lines.isEmpty { continue }
+    if i > 0 { print("-- another window of the app, over the target (same coordinates):") }
+    lines.forEach { print($0) }; any = true
+  }
+  if !any { print("(no text found)") }
+}
+
 // ---------- actions ----------
 // press clicks a control: an AX press for native controls, the SkyLight click at its centre for Chromium ones.
 func press(_ app: NSRunningApplication, _ win: AXUIElement, _ el: AXUIElement) {
@@ -910,6 +952,10 @@ case ("shot", 2):
   let (app, root) = appRoot(args[0])
   guard let win = window(root) else { fail("\(args[0]) has no window") }
   shot(app, win, args[1])
+case ("ocr", 1):
+  let (app, root) = appRoot(args[0])
+  guard let win = window(root) else { fail("\(args[0]) has no window") }
+  ocr(app, win)
 case ("click", 2):
   let (app, _, els, win, it) = resolve(args[0], args[1], kind: "CLICK")
   press(app, win, els[Int(it.ref)! - 1])
@@ -954,5 +1000,5 @@ case ("key", 2):
   print("pressed \(args[1])")
 case ("menu", 2): menu(args[0], args[1])
 default:
-  fail("usage: mac-ax dump|click|drag|scroll|type|act|key|menu|shot APP ... | apps | running APP | front | trusted [--prompt]")
+  fail("usage: mac-ax dump|click|drag|scroll|type|act|key|menu|shot|ocr APP ... | apps | running APP | front | trusted [--prompt]")
 }

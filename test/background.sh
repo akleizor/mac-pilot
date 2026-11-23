@@ -36,6 +36,7 @@ check "y[1-9]*" scroll down --lines 10
 check "y0" scroll up --lines 30
 check "val=hello" type field hello
 check key:Escape key escape
+"$M" ocr --app "$A" | grep -q "hello" && echo "ok   ocr reads the typed text" || { echo "FAIL ocr did not read hello"; fails=$((fails+1)); }
 [ "$(front)" != com.google.Chrome ] && echo "ok   Chrome never came to the front" || { echo "FAIL Chrome is in front"; fails=$((fails+1)); }
 osascript -e "quit app \"$A\"" >/dev/null
 for _ in $(seq 40); do pgrep -f -- "--user-data-dir=$T" >/dev/null || break; sleep 0.25; done; rm -rf "$T"

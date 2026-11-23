@@ -26,6 +26,7 @@ machine's own notes.
 | `key <combo>` | `return`, `escape`, `tab`, `cmd+a`, `cmd+shift+n` … sent to that app |
 | `menu "File > New"` | Choose a menu-bar item |
 | `shot FILE.png` | Screenshot the window, even covered or on another Desktop (Screen Recording) |
+| `ocr` | The window's text as `X,Y<tab>line` in window-local points, read on-device, popups over it included: for apps whose `dump` is empty |
 | `record FILE.mov` | Video of the window, even covered, in the background (`--seconds N`, default 30) |
 | `open` · `apps` | Launch in the background · list apps with a window |
 | `plan FILE` | A JSON plan: deterministic steps, checked postconditions, one bounded recovery |
@@ -155,6 +156,11 @@ echo 'document.querySelector("#q").value="x"; document.forms[0].submit()' | $M j
   in the image, `click --at` / `drag --at … --to …` in window-local points, then
   `shot` again to confirm. `shot` prints the image and window sizes: on a Retina
   display divide image pixels by their ratio to get window points.
+- **No accessibility tree** (WeChat 4.x: `dump` is empty). Read with `mac ocr`, not
+  `shot`: it returns text and points, no image. Such apps also ignore background clicks
+  and keys: use `--front`, or activate the app for one chained call and hand the front
+  back. A popup (a search dropdown) closes when the app loses the front, so open and
+  pick it in the same call.
 - **Text-only lists** (a chat list) have no buttons. Use the app's own search
   (`key cmd+k`), type, `key return`, then verify, e.g. by the input field's label.
 - **Launching.** Most apps take the front when their first window opens, `open -g`
