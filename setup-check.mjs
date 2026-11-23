@@ -1,12 +1,12 @@
 // A missing piece must fail the check: `mac setup` and the CI both run this
 // against a fresh cache with no Swift compiler on PATH.
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, symlinkSync } from "node:fs";
+import { cpSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { join, dirname } from "node:path";
 const bin = join(dirname(fileURLToPath(import.meta.url)), "bin", "mac");
-const run = (env) => { try { execFileSync(bin, ["setup"], { env: { ...process.env, ...env }, encoding: "utf8" }); return 0; } catch (e) { return e.status; } };
+const run = (env, exe = bin) => { try { execFileSync(exe, ["setup"], { env: { ...process.env, ...env }, encoding: "utf8" }); return 0; } catch (e) { return e.status; } };
 let failures = 0;
 const check = (name, got, want) => { const ok = got === want; if (!ok) failures++; console.log(`${ok ? "ok  " : "FAIL"} ${name}: exit ${got}, want ${want}`); };
 if (!process.env.CI) check("with everything installed", run({}), 0); // CI runners have no Accessibility grant
@@ -15,7 +15,15 @@ const bare = mkdtempSync(join(tmpdir(), "mac-check-"));
 symlinkSync(process.execPath, join(bare, "node"));
 for (const tool of ["readlink", "dirname", "open"]) symlinkSync(`/usr/bin/${tool}`, join(bare, tool));
 const cache = mkdtempSync(join(tmpdir(), "mac-cache-"));
-try { check("with no Swift on PATH", run({ PATH: `${bare}:/bin`, XDG_CACHE_HOME: cache }), 1); }
-finally { for (const d of [bare, cache]) rmSync(d, { recursive: true, force: true }); }
+// the Homebrew layout: a prebuilt lib/mac-ax beside ax.swift runs with no Swift on PATH (a stub stands in)
+const brew = mkdtempSync(join(tmpdir(), "mac-brew-"));
+const root = dirname(dirname(bin));
+for (const d of ["bin", "lib"]) cpSync(join(root, d), join(brew, d), { recursive: true });
+writeFileSync(join(brew, "lib", "mac-ax"), "#!/bin/sh\necho granted\n", { mode: 0o755 });
+try {
+  check("with no Swift on PATH", run({ PATH: `${bare}:/bin`, XDG_CACHE_HOME: cache }), 1);
+  check("prebuilt driver, no Swift on PATH", run({ PATH: `${bare}:/bin`, XDG_CACHE_HOME: cache }, join(brew, "bin", "mac")), 0);
+}
+finally { for (const d of [bare, cache, brew]) rmSync(d, { recursive: true, force: true }); }
 console.log(failures ? `${failures} failed` : "self-check passed");
 process.exitCode = failures ? 1 : 0;

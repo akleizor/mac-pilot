@@ -290,9 +290,9 @@ and verify timings, recovery count, the final window and each check.
 
 ## How it works
 
-A small Swift driver, `lib/ax.swift`, does the Accessibility work. `mac` builds
-it with `swiftc` on first use (and again whenever the source changes) into
-`~/.cache/mac`. Each call is one short process that reads the window fresh, so
+A small Swift driver, `lib/ax.swift`, does the Accessibility work. The Homebrew
+install ships it prebuilt as `lib/mac-ax`; a source checkout builds it with
+`swiftc` on first use (and again whenever the source changes) into `~/.cache/mac`. Each call is one short process that reads the window fresh, so
 nothing is kept between calls; `@N` refs are checked against the label and role
 the last `dump` saw. The Accessibility permission belongs to the app that runs
 `mac` (the terminal or agent app); `setup` asks for it once.
