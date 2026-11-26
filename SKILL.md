@@ -234,6 +234,21 @@ echo 'document.querySelector("#q").value="x"; document.forms[0].submit()' | $M j
   ```
   Screen Sharing must be on (System Settings > General > Sharing). Its key events
   arrive only one by one with pauses; `type` already paces them.
+- **A Mac nobody is watching.** Two blockers, not one, and they need different
+  tools — probe both before the first action, so it is never a surprise mid-task:
+  ```bash
+  locked() { ioreg -n Root -d1 -a | plutil -extract IOConsoleUsers.0.CGSSessionScreenIsLocked raw - 2>/dev/null || echo false; }
+  locked   # true = input needs VNC; absent or false = unlocked
+  pmset -g assertions | grep 'PreventUserIdleDisplaySleep'   # 0 = the display may sleep
+  ```
+  - **Display asleep, unlocked.** `dump`, `click`, `type`, `shot` work; only real
+    HID (`--front`, macOS password sheets) needs it lit — `caffeinate -u -t 120 &`.
+    A `shot` of a sleeping-but-unlocked session still shows the windows.
+  - **Locked.** Reads work, no press does; unlock over `mac vnc` (next bullet).
+    A `shot` showing a desktop with no menu bar is the wallpaper, i.e. locked.
+  - **While the work runs**, hold `caffeinate -dimsu &` and kill that exact PID
+    when done, so the session cannot re-lock halfway through a flow; then
+    `pmset displaysleepnow` if it was asleep before.
 - **Locked screen.** Apps keep running and `mac` still reads them (`dump` says
   so); mouse input and `shot` refuse, since the window has no frame. Unlock it
   through `mac vnc`, not through `loginwindow`: on macOS 27 the lock sheet has no
