@@ -224,7 +224,9 @@ echo 'document.querySelector("#q").value="x"; document.forms[0].submit()' | $M j
 - **Accessibility lost** (after a reboot or a new interpreter: every `mac` action
   fails, Hammerspoon too). Never hand this to the user. `mac vnc` drives the Mac
   through its own Screen Sharing, which needs no Accessibility, so it can switch the
-  grant back on in Privacy & Security. Steps run in order on one connection, in
+  grant back on in Privacy & Security. It is the way in for the locked screen too —
+  any case where `mac` can read but refuses to press is a VNC case, not a reason to
+  stop and report. Steps run in order on one connection, in
   desktop pixels (`shot` the whole desktop first, at shrink 4, to find them):
   ```bash
   PW="$(your-password-tool)" $M vnc --secret PW shot /tmp/d.png \
@@ -233,15 +235,22 @@ echo 'document.querySelector("#q").value="x"; document.forms[0].submit()' | $M j
   Screen Sharing must be on (System Settings > General > Sharing). Its key events
   arrive only one by one with pauses; `type` already paces them.
 - **Locked screen.** Apps keep running and `mac` still reads them (`dump` says
-  so); mouse input and `shot` refuse, since the window has no frame. The lock
-  screen is the `loginwindow` app; unlock it with the same password, only after
-  confirming the lock so the password can never land in an app:
+  so); mouse input and `shot` refuse, since the window has no frame. Unlock it
+  through `mac vnc`, not through `loginwindow`: on macOS 27 the lock sheet has no
+  window for AX to type into (`key --app loginwindow return` echoing to nothing,
+  `type "Enter Password"` refused — 2026-11-26), while Screen Sharing keys reach
+  it. Confirm the lock first so the password can never land in an app, and
+  unlock on one connection — a fresh one starts from a dark screen:
   ```bash
   locked() { ioreg -n Root -d1 -a | plutil -extract IOConsoleUsers.0.CGSSessionScreenIsLocked raw - 2>/dev/null || echo false; }
-  # the first key wakes the lock screen; the password field appears only after it
-  [ "$(locked)" = true ] && $M key --app loginwindow return && sleep 1 && PW="$(your-password-tool)" \
-    $M type --app loginwindow "Enter Password" --secret PW && $M key --app loginwindow return
+  # the first key wakes the lock screen; the password field takes the keys after it
+  [ "$(locked)" = true ] && PW="$(your-password-tool)" $M vnc --secret PW \
+    key space wait 800 type --secret PW wait 400 key return wait 2500
+  locked   # false means the desktop is usable again
   ```
+  `mac vnc` says on stderr when the session is locked, because a `shot` taken
+  then is the wallpaper, not the desktop — a desktop with no windows and no
+  menu bar is that picture, never a broken Mac.
 - **Permissions follow the responsible process**, not your terminal: a tmux
   server started by a LaunchAgent is charged to that agent's interpreter. Find
   who is blamed with `log show --process tccd` (`AUTHREQ_ATTRIBUTION` lines);
